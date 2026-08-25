@@ -5,8 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"release-confidence-score/internal/git/types"
-	"release-confidence-score/internal/llm/truncation"
+	"github.com/gwenneg/soundings/internal/git/types"
 )
 
 // Test utility functions
@@ -46,9 +45,9 @@ func TestStripMarkdownCodeBlocks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := stripMarkdownCodeBlocks(tt.input)
+			result := StripMarkdownCodeBlocks(tt.input)
 			if result != tt.expected {
-				t.Errorf("stripMarkdownCodeBlocks() = %q, want %q", result, tt.expected)
+				t.Errorf("StripMarkdownCodeBlocks() = %q, want %q", result, tt.expected)
 			}
 		})
 	}
@@ -73,27 +72,6 @@ func TestEscapePipes(t *testing.T) {
 			result := escapePipes(tt.input)
 			if result != tt.expected {
 				t.Errorf("escapePipes(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestQEStatus(t *testing.T) {
-	tests := []struct {
-		label    string
-		expected string
-	}{
-		{"rcs/qe-tested", "✅ Tested"},
-		{"rcs/needs-qe-testing", "⚠️ Needs Testing"},
-		{"", "N/A"},
-		{"some-other-label", "N/A"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.label, func(t *testing.T) {
-			result := qeStatus(tt.label)
-			if result != tt.expected {
-				t.Errorf("qeStatus(%q) = %q, want %q", tt.label, result, tt.expected)
 			}
 		})
 	}
@@ -124,18 +102,20 @@ func TestPRLink(t *testing.T) {
 		name     string
 		prNumber int64
 		repoURL  string
+		platform string
 		expected string
 	}{
-		{"valid PR", 123, "https://github.com/user/repo", "[#123](https://github.com/user/repo/pull/123)"},
-		{"zero PR", 0, "https://github.com/user/repo", "N/A"},
-		{"negative PR", -1, "https://github.com/user/repo", "N/A"},
+		{"valid PR", 123, "https://github.com/user/repo", "github", "[#123](https://github.com/user/repo/pull/123)"},
+		{"gitlab MR", 7, "https://gitlab.example.com/group/sub/repo", "gitlab", "[!7](https://gitlab.example.com/group/sub/repo/-/merge_requests/7)"},
+		{"zero PR", 0, "https://github.com/user/repo", "github", "N/A"},
+		{"negative PR", -1, "https://github.com/user/repo", "github", "N/A"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := prLink(tt.prNumber, tt.repoURL)
+			result := prLink(tt.prNumber, tt.repoURL, tt.platform)
 			if result != tt.expected {
-				t.Errorf("prLink(%d, %q) = %q, want %q", tt.prNumber, tt.repoURL, result, tt.expected)
+				t.Errorf("prLink(%d, %q, %q) = %q, want %q", tt.prNumber, tt.repoURL, tt.platform, result, tt.expected)
 			}
 		})
 	}
@@ -169,6 +149,7 @@ func TestDocURL(t *testing.T) {
 		filename string
 		repoURL  string
 		branch   string
+		platform string
 		expected string
 	}{
 		{
@@ -176,13 +157,23 @@ func TestDocURL(t *testing.T) {
 			"README.md",
 			"https://github.com/user/repo",
 			"main",
+			"github",
 			"https://github.com/user/repo/blob/main/README.md",
+		},
+		{
+			"gitlab subgroup path uses /-/ scope",
+			".soundings-docs.md",
+			"https://gitlab.example.com/group/sub/repo",
+			"main",
+			"gitlab",
+			"https://gitlab.example.com/group/sub/repo/-/blob/main/.soundings-docs.md",
 		},
 		{
 			"http URL",
 			"http://example.com/doc.md",
 			"https://github.com/user/repo",
 			"main",
+			"github",
 			"http://example.com/doc.md",
 		},
 		{
@@ -190,15 +181,16 @@ func TestDocURL(t *testing.T) {
 			"https://example.com/doc.md",
 			"https://github.com/user/repo",
 			"main",
+			"github",
 			"https://example.com/doc.md",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := docURL(tt.filename, tt.repoURL, tt.branch)
+			result := docURL(tt.filename, tt.repoURL, tt.branch, tt.platform)
 			if result != tt.expected {
-				t.Errorf("docURL(%q, %q, %q) = %q, want %q", tt.filename, tt.repoURL, tt.branch, result, tt.expected)
+				t.Errorf("docURL(%q, %q, %q, %q) = %q, want %q", tt.filename, tt.repoURL, tt.branch, tt.platform, result, tt.expected)
 			}
 		})
 	}
@@ -210,6 +202,7 @@ func TestCommitLink(t *testing.T) {
 		shortSHA string
 		fullSHA  string
 		repoURL  string
+		platform string
 		expected string
 	}{
 		{
@@ -217,15 +210,24 @@ func TestCommitLink(t *testing.T) {
 			"abc123",
 			"abc123def456",
 			"https://github.com/user/repo",
+			"github",
 			"[abc123](https://github.com/user/repo/commit/abc123def456)",
+		},
+		{
+			"gitlab commit uses /-/ scope",
+			"abc123",
+			"abc123def456",
+			"https://gitlab.example.com/group/sub/repo",
+			"gitlab",
+			"[abc123](https://gitlab.example.com/group/sub/repo/-/commit/abc123def456)",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := commitLink(tt.shortSHA, tt.fullSHA, tt.repoURL)
+			result := commitLink(tt.shortSHA, tt.fullSHA, tt.repoURL, tt.platform)
 			if result != tt.expected {
-				t.Errorf("commitLink(%q, %q, %q) = %q, want %q", tt.shortSHA, tt.fullSHA, tt.repoURL, result, tt.expected)
+				t.Errorf("commitLink(%q, %q, %q, %q) = %q, want %q", tt.shortSHA, tt.fullSHA, tt.repoURL, tt.platform, result, tt.expected)
 			}
 		})
 	}
@@ -296,7 +298,7 @@ func TestDocFileInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := docFileInfo(tt.filename, tt.repoURL, tt.branch, tt.content)
+			result := docFileInfo(tt.filename, tt.repoURL, tt.branch, "github", tt.content)
 			if result != tt.expected {
 				t.Errorf("docFileInfo(%q, %q, %q, %q) = %q, want %q", tt.filename, tt.repoURL, tt.branch, tt.content, result, tt.expected)
 			}
@@ -373,7 +375,7 @@ func TestTemplateFuncs(t *testing.T) {
 		"hasPrefix",
 		"contains",
 		"escapePipes",
-		"qeStatus",
+		"escapeCell",
 		"authorizationStatus",
 		"prLink",
 		"formatAuthor",
@@ -419,7 +421,6 @@ func TestGenerateReport(t *testing.T) {
 		Comparisons:             nil,
 		Documentation:           nil,
 		UserGuidance:            nil,
-		TruncationInfo:          nil,
 		AutoDeployThreshold:     80,
 		ReviewRequiredThreshold: 60,
 	}
@@ -569,24 +570,23 @@ func TestGenerateReportWithComparisons(t *testing.T) {
 
 	comparisons := []*types.Comparison{
 		{
-			RepoURL: "https://github.com/user/repo",
-			DiffURL: "https://github.com/user/repo/compare/v1...v2",
+			Platform: "github",
+			RepoURL:  "https://github.com/user/repo",
+			DiffURL:  "https://github.com/user/repo/compare/v1...v2",
 			Commits: []types.Commit{
 				{
-					SHA:            "abc123def456",
-					ShortSHA:       "abc123",
-					Message:        "Fix bug | with pipe",
-					Author:         "John Doe",
-					PRNumber:       123,
-					QETestingLabel: "rcs/qe-tested",
+					SHA:      "abc123def456",
+					ShortSHA: "abc123",
+					Message:  "Fix bug | with pipe",
+					Author:   "John Doe",
+					PRNumber: 123,
 				},
 				{
-					SHA:            "def456abc789",
-					ShortSHA:       "def456",
-					Message:        "Another fix",
-					Author:         "Jane Smith",
-					PRNumber:       0,
-					QETestingLabel: "rcs/needs-qe-testing",
+					SHA:      "def456abc789",
+					ShortSHA: "def456",
+					Message:  "Another fix",
+					Author:   "Jane Smith",
+					PRNumber: 0,
 				},
 			},
 			Files: []types.FileChange{},
@@ -627,14 +627,6 @@ func TestGenerateReportWithComparisons(t *testing.T) {
 	// Verify pipe escaping
 	if !strings.Contains(report, "Fix bug \\| with pipe") {
 		t.Error("GenerateReport() report did not escape pipes in commit message")
-	}
-
-	// Verify QE status
-	if !strings.Contains(report, "✅ Tested") {
-		t.Error("GenerateReport() report missing QE tested status")
-	}
-	if !strings.Contains(report, "⚠️ Needs Testing") {
-		t.Error("GenerateReport() report missing QE needs testing status")
 	}
 
 	// Verify PR link
@@ -714,53 +706,6 @@ func TestGenerateReportWithDocumentation(t *testing.T) {
 	}
 }
 
-func TestGenerateReportWithTruncation(t *testing.T) {
-	jsonResponse := `{
-		"score": 70,
-		"summary": "Large change with medium impact",
-		"risk_summary": {"concerns": [{"severity": "medium", "description": "Large diff"}], "positives": ["Structured"]},
-		"action_items": {"critical": [], "important": [], "followup": []},
-		"technical_details": {"code": [], "infrastructure": [], "dependencies": []},
-		"documentation_quality": "Good",
-		"documentation_recommendations": "None"
-	}`
-
-	truncationInfo := &truncation.TruncationMetadata{
-		Level:          "moderate",
-		TotalFiles:     100,
-		FilesPreserved: 80,
-		FilesTruncated: 20,
-	}
-
-	config := &ReportConfig{
-		LLMResponse:             jsonResponse,
-		Metadata:                &ReportMetadata{ModelID: "test-model", GenerationTime: time.Now()},
-		TruncationInfo:          truncationInfo,
-		AutoDeployThreshold:     80,
-		ReviewRequiredThreshold: 60,
-	}
-
-	score, report, err := GenerateReport(config)
-	if err != nil {
-		t.Fatalf("GenerateReport() error = %v", err)
-	}
-
-	if score != 70 {
-		t.Errorf("GenerateReport() score = %d, want 70", score)
-	}
-
-	// Verify truncation warning
-	if !strings.Contains(report, "Diff Truncation Applied") {
-		t.Error("GenerateReport() report missing truncation warning")
-	}
-	if !strings.Contains(report, "moderate") {
-		t.Error("GenerateReport() report missing truncation level")
-	}
-	if !strings.Contains(report, "80/100") {
-		t.Error("GenerateReport() report missing files preserved count")
-	}
-}
-
 func TestGenerateReportWithFeedbackURL(t *testing.T) {
 	jsonResponse := `{
 		"score": 85,
@@ -818,49 +763,5 @@ func TestGenerateReportWithoutFeedbackURL(t *testing.T) {
 
 	if strings.Contains(report, "Share your feedback on this report") {
 		t.Error("GenerateReport() report should not contain feedback link when FeedbackURL is empty")
-	}
-}
-
-func TestGenerateReportWithAggressiveTruncation(t *testing.T) {
-	jsonResponse := `{
-		"score": 65,
-		"summary": "Very large change with high impact",
-		"risk_summary": {"concerns": [{"severity": "high", "description": "Very large diff"}], "positives": ["Structured"]},
-		"action_items": {"critical": [], "important": [], "followup": []},
-		"technical_details": {"code": [], "infrastructure": [], "dependencies": []},
-		"documentation_quality": "Good",
-		"documentation_recommendations": "None"
-	}`
-
-	truncationInfo := &truncation.TruncationMetadata{
-		Level:          "aggressive",
-		TotalFiles:     200,
-		FilesPreserved: 50,
-		FilesTruncated: 150,
-	}
-
-	config := &ReportConfig{
-		LLMResponse:             jsonResponse,
-		Metadata:                &ReportMetadata{ModelID: "test-model", GenerationTime: time.Now()},
-		TruncationInfo:          truncationInfo,
-		AutoDeployThreshold:     80,
-		ReviewRequiredThreshold: 60,
-	}
-
-	score, report, err := GenerateReport(config)
-	if err != nil {
-		t.Fatalf("GenerateReport() error = %v", err)
-	}
-
-	if score != 65 {
-		t.Errorf("GenerateReport() score = %d, want 65", score)
-	}
-
-	// Verify aggressive truncation level triggers additional message
-	if !strings.Contains(report, "aggressive") {
-		t.Error("GenerateReport() report missing aggressive truncation level")
-	}
-	if !strings.Contains(report, "Middle sections of medium-risk files") {
-		t.Error("GenerateReport() report missing aggressive truncation details")
 	}
 }

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"release-confidence-score/internal/config"
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/config"
+	"github.com/gwenneg/soundings/internal/git/types"
 )
 
 // mockDocumentationSource implements types.DocumentationSource for testing

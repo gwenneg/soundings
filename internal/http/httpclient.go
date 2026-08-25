@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,8 +13,6 @@ import (
 type HTTPClientOptions struct {
 	// Timeout is the request timeout duration (0 means no timeout)
 	Timeout time.Duration
-	// SkipSSLVerify disables SSL certificate verification (use with caution)
-	SkipSSLVerify bool
 	// BlockPrivateIPs rejects connections that resolve to private, loopback,
 	// link-local, or otherwise non-public addresses (including cloud metadata
 	// endpoints). Use for requests to attacker-influenced URLs to prevent SSRF.
@@ -33,24 +30,12 @@ func NewHTTPClient(opts HTTPClientOptions) *http.Client {
 		Timeout: opts.Timeout,
 	}
 
-	// Only configure custom transport if SSL verification needs to be skipped
-	// or private IPs need to be blocked
-	if opts.SkipSSLVerify || opts.BlockPrivateIPs {
-		transport := &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
+	// Only configure a custom transport if private IPs need to be blocked
+	if opts.BlockPrivateIPs {
+		client.Transport = &http.Transport{
+			Proxy:       http.ProxyFromEnvironment,
+			DialContext: safeDialContext(opts.AllowedPrivateHost),
 		}
-
-		if opts.SkipSSLVerify {
-			transport.TLSClientConfig = &tls.Config{
-				InsecureSkipVerify: true,
-			}
-		}
-
-		if opts.BlockPrivateIPs {
-			transport.DialContext = safeDialContext(opts.AllowedPrivateHost)
-		}
-
-		client.Transport = transport
 	}
 
 	return client

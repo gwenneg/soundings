@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "soundings",
+  "displayName": "Soundings",
+  "description": "Take soundings before you ship. Analyzes GitHub/GitLab compare URLs and produces a 0-100 release confidence score with an actionable risk report: categorized concerns, compound-risk detection across repositories, and actionable checks. No external LLM API, no service-account keys - the agent does the analysis, a small Go helper does the fetching.",
+  "author": {
+    "name": "Gwenneg Lepage",
+    "url": "https://github.com/gwenneg"
+  },
+  "keywords": [
+    "release-management",
+    "risk-assessment",
+    "code-review",
+    "devops",
+    "deployment"
+  ],
+  "repository": "https://github.com/gwenneg/soundings",
+  "license": "Apache-2.0",
+  "version": "0.1.0"
+}

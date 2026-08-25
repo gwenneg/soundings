@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"release-confidence-score/internal/git/shared"
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/git/shared"
+	"github.com/gwenneg/soundings/internal/git/types"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
 	"golang.org/x/sync/errgroup"

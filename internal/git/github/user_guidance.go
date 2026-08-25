@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/go-github/v90/github"
+	"github.com/gwenneg/soundings/internal/git/shared"
+	"github.com/gwenneg/soundings/internal/git/types"
 	"golang.org/x/sync/errgroup"
-	"release-confidence-score/internal/git/shared"
-	"release-confidence-score/internal/git/types"
 )
 
 // fetchUserGuidance extracts user guidance from all PRs in the comparison

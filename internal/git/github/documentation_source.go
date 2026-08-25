@@ -2,9 +2,12 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/go-github/v90/github"
+
+	"github.com/gwenneg/soundings/internal/git/shared"
 )
 
 // documentationSource implements DocumentationSource interface for GitHub
@@ -44,6 +47,10 @@ func (d *documentationSource) FetchFileContent(ctx context.Context, path, ref st
 	opts := &github.RepositoryContentGetOptions{Ref: ref}
 	fileContent, _, _, err := d.client.Repositories.GetContents(ctx, d.owner, d.repo, path, opts)
 	if err != nil {
+		var ghErr *github.ErrorResponse
+		if errors.As(err, &ghErr) && ghErr.Response != nil && ghErr.Response.StatusCode == 404 {
+			return "", fmt.Errorf("%w: %s in %s/%s", shared.ErrDocNotFound, path, d.owner, d.repo)
+		}
 		return "", fmt.Errorf("failed to fetch %s from %s/%s: %w", path, d.owner, d.repo, err)
 	}
 

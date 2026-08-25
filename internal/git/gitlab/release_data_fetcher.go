@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 
-	"release-confidence-score/internal/config"
-	"release-confidence-score/internal/git/shared"
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/config"
+	"github.com/gwenneg/soundings/internal/git/shared"
+	"github.com/gwenneg/soundings/internal/git/types"
 
 	"golang.org/x/sync/errgroup"
 
@@ -62,9 +61,6 @@ func (f *Fetcher) FetchReleaseData(ctx context.Context, compareURL string) (*typ
 
 	slog.Debug("Parsed compare URL", "host", host, "project", projectPath, "base", baseCommit, "head", headCommit)
 
-	// URL-encode project path for API calls
-	encodedPath := urlEncodeProjectPath(projectPath)
-
 	// Create shared cache to avoid duplicate API calls across operations
 	cache := newMRCache()
 
@@ -78,12 +74,12 @@ func (f *Fetcher) FetchReleaseData(ctx context.Context, compareURL string) (*typ
 	// Fetch diff and user guidance (sequential, as guidance depends on diff)
 	g.Go(func() error {
 		var err error
-		comparison, err = fetchDiff(gCtx, f.client, host, projectPath, baseCommit, headCommit, compareURL, cache)
+		comparison, err = fetchDiff(gCtx, f.client, host, projectPath, baseCommit, headCommit, compareURL)
 		if err != nil {
 			return fmt.Errorf("failed to fetch and enrich comparison: %w", err)
 		}
 
-		userGuidance, err = fetchUserGuidance(gCtx, f.client, encodedPath, comparison, cache)
+		userGuidance, err = fetchUserGuidance(gCtx, f.client, projectPath, comparison, cache)
 		if err != nil {
 			return fmt.Errorf("failed to fetch user guidance: %w", err)
 		}
@@ -145,10 +141,6 @@ func splitProjectPath(projectPath string) (owner, name string) {
 		return "", projectPath
 	}
 	return projectPath[:lastSlash], projectPath[lastSlash+1:]
-}
-
-func urlEncodeProjectPath(projectPath string) string {
-	return url.PathEscape(projectPath)
 }
 
 // mrCache caches MR objects to avoid duplicate API calls within a single CLI execution.

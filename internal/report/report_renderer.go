@@ -10,9 +10,7 @@ import (
 	"text/template"
 	"time"
 
-	"release-confidence-score/internal/git/shared"
-	"release-confidence-score/internal/git/types"
-	"release-confidence-score/internal/llm/truncation"
+	"github.com/gwenneg/soundings/internal/git/types"
 )
 
 //go:embed report_template.md
@@ -32,7 +30,7 @@ func templateFuncs() template.FuncMap {
 		"hasPrefix":           strings.HasPrefix,
 		"contains":            strings.Contains,
 		"escapePipes":         escapePipes,
-		"qeStatus":            qeStatus,
+		"escapeCell":          escapeCell,
 		"authorizationStatus": authorizationStatus,
 		"prLink":              prLink,
 		"formatAuthor":        formatAuthor,
@@ -49,15 +47,15 @@ func escapePipes(s string) string {
 	return strings.ReplaceAll(s, "|", "\\|")
 }
 
-func qeStatus(label string) string {
-	switch label {
-	case shared.LabelQETested:
-		return "✅ Tested"
-	case shared.LabelNeedsQETesting:
-		return "⚠️ Needs Testing"
-	default:
-		return "N/A"
-	}
+// escapeCell makes arbitrary user text safe inside a one-row markdown table
+// cell: pipes are escaped and newlines collapsed to <br> so multi-line
+// guidance cannot break the table or inject rows.
+func escapeCell(s string) string {
+	s = escapePipes(s)
+	s = strings.ReplaceAll(s, "\r\n", "<br>")
+	s = strings.ReplaceAll(s, "\n", "<br>")
+	s = strings.ReplaceAll(s, "\r", "<br>")
+	return s
 }
 
 func authorizationStatus(isAuthorized bool) string {
@@ -67,33 +65,41 @@ func authorizationStatus(isAuthorized bool) string {
 	return "❌ Unauthorized"
 }
 
-func prLink(prNumber int64, repoURL string) string {
+func prLink(prNumber int64, repoURL, platform string) string {
 	if prNumber <= 0 {
 		return "N/A"
 	}
 
 	// GitLab uses /-/merge_requests/, GitHub uses /pull/
-	if strings.Contains(repoURL, "github.com") {
+	if platform == "github" {
 		return fmt.Sprintf("[#%d](%s/pull/%d)", prNumber, repoURL, prNumber)
 	}
 	return fmt.Sprintf("[!%d](%s/-/merge_requests/%d)", prNumber, repoURL, prNumber)
 }
 
 func formatAuthor(author, commentURL string) string {
-	if strings.Contains(commentURL, "github.com") {
+	if strings.HasPrefix(commentURL, "https://github.com/") {
 		return fmt.Sprintf("[@%s](https://github.com/%s)", author, author)
 	}
 	return "@" + author
 }
 
-func docURL(filename, repoURL, branch string) string {
+func docURL(filename, repoURL, branch, platform string) string {
 	if strings.HasPrefix(filename, "http") {
 		return filename
+	}
+	// GitLab's canonical file path uses the /-/ scope; the legacy unscoped
+	// form is not redirected for nested subgroups.
+	if platform == "gitlab" {
+		return fmt.Sprintf("%s/-/blob/%s/%s", repoURL, branch, filename)
 	}
 	return fmt.Sprintf("%s/blob/%s/%s", repoURL, branch, filename)
 }
 
-func commitLink(shortSHA, fullSHA, repoURL string) string {
+func commitLink(shortSHA, fullSHA, repoURL, platform string) string {
+	if platform == "gitlab" {
+		return fmt.Sprintf("[%s](%s/-/commit/%s)", shortSHA, repoURL, fullSHA)
+	}
 	return fmt.Sprintf("[%s](%s/commit/%s)", shortSHA, repoURL, fullSHA)
 }
 
@@ -101,14 +107,15 @@ func formatDate(t time.Time) string {
 	return t.Format("2006-01-02 15:04")
 }
 
-func docFileInfo(filename, repoURL, branch, content string) string {
-	url := docURL(filename, repoURL, branch)
+func docFileInfo(filename, repoURL, branch, platform, content string) string {
+	url := docURL(filename, repoURL, branch, platform)
 	return fmt.Sprintf("- %s - %d chars", url, len(content))
 }
 
-// stripMarkdownCodeBlocks removes markdown code block markers from LLM responses
+// StripMarkdownCodeBlocks removes markdown code block markers from analysis
+// output. Exported so validation and rendering strip identically.
 // Handles both ```json and ``` style code blocks
-func stripMarkdownCodeBlocks(content string) string {
+func StripMarkdownCodeBlocks(content string) string {
 	trimmed := strings.TrimSpace(content)
 
 	// Return as-is if not wrapped in code blocks
@@ -187,7 +194,6 @@ type ReportConfig struct {
 	Comparisons             []*types.Comparison
 	Documentation           []*types.Documentation
 	UserGuidance            []types.UserGuidance
-	TruncationInfo          *truncation.TruncationMetadata
 	AutoDeployThreshold     int
 	ReviewRequiredThreshold int
 	AppInterfaceMode        bool
@@ -201,8 +207,7 @@ type TemplateData struct {
 	Comparisons           []*types.Comparison
 	Documentation         []*types.Documentation
 	ReleaseRecommendation string
-	AllUserGuidance       []types.UserGuidance           // All user guidance for comprehensive reporting
-	TruncationInfo        *truncation.TruncationMetadata // Optional truncation information
+	AllUserGuidance       []types.UserGuidance // All user guidance for comprehensive reporting
 	AppInterfaceMode      bool
 	FeedbackURL           string
 }
@@ -210,7 +215,7 @@ type TemplateData struct {
 // GenerateReport parses LLM response and generates the final report
 func GenerateReport(config *ReportConfig) (score int, report string, err error) {
 	// Strip markdown code blocks if present (LLMs sometimes wrap JSON in ```json ... ```)
-	jsonContent := stripMarkdownCodeBlocks(config.LLMResponse)
+	jsonContent := StripMarkdownCodeBlocks(config.LLMResponse)
 
 	// Parse the structured JSON response
 	var analysis StructuredAnalysis
@@ -234,7 +239,6 @@ func GenerateReport(config *ReportConfig) (score int, report string, err error) 
 		Documentation:         config.Documentation,
 		ReleaseRecommendation: recommendation,
 		AllUserGuidance:       config.UserGuidance,
-		TruncationInfo:        config.TruncationInfo,
 		AppInterfaceMode:      config.AppInterfaceMode,
 		FeedbackURL:           config.FeedbackURL,
 	}
