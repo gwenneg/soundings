@@ -2,20 +2,26 @@ package shared
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 
-	"release-confidence-score/internal/config"
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/config"
+	"github.com/gwenneg/soundings/internal/git/types"
 )
 
 const (
 	// Documentation file constants
-	mainDocFilename      = ".release-confidence-docs.md"
+	mainDocFilename      = ".soundings-docs.md"
 	additionalDocsHeader = "Additional Documentation"
 )
+
+// ErrDocNotFound marks a documentation lookup that failed because the file
+// does not exist, as opposed to auth/network/server failures. Sources wrap
+// 404s with it so callers can tell "docs absent" from "docs unavailable".
+var ErrDocNotFound = errors.New("documentation file not found")
 
 // Package-level compiled regexes for performance
 var (
@@ -56,9 +62,18 @@ func (d *DocumentationFetcher) FetchAllDocs(ctx context.Context) (*types.Documen
 	// Try to fetch main documentation
 	mainDocContent, err := d.source.FetchFileContent(ctx, mainDocFilename, defaultBranch)
 	if err != nil {
-		slog.Debug("No main documentation file found", "repo", repository.URL, "error", err)
+		if errors.Is(err, ErrDocNotFound) {
+			slog.Debug("No main documentation file found", "repo", repository.URL)
+			return &types.Documentation{
+				Repository: repository,
+			}, nil
+		}
+		// Real failure (auth, network, server): report "unavailable", not "absent",
+		// so a transient outage doesn't read as missing documentation.
+		slog.Warn("Failed to fetch main documentation", "repo", repository.URL, "error", err)
 		return &types.Documentation{
 			Repository: repository,
+			FetchError: err.Error(),
 		}, nil
 	}
 

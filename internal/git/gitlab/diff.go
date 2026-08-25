@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 
-	"release-confidence-score/internal/git/shared"
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/git/types"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
 	"golang.org/x/sync/errgroup"
@@ -17,11 +15,8 @@ import (
 // fetchDiff fetches comparison data from GitLab and augments commits with MR metadata
 // Returns a complete Comparison with augmented commits, files, and stats
 // The cache parameter allows sharing cached MR objects across multiple operations
-func fetchDiff(ctx context.Context, client *gitlab.Client, host, projectPath, base, head, diffURL string, cache *mrCache) (*types.Comparison, error) {
+func fetchDiff(ctx context.Context, client *gitlab.Client, host, projectPath, base, head, diffURL string) (*types.Comparison, error) {
 	slog.Debug("Starting comparison fetch and commit augmentation", "project", projectPath, "base", base, "head", head)
-
-	// URL-encode project path for API calls
-	encodedPath := url.PathEscape(projectPath)
 
 	// Fetch comparison
 	compareOpts := &gitlab.CompareOptions{
@@ -29,7 +24,7 @@ func fetchDiff(ctx context.Context, client *gitlab.Client, host, projectPath, ba
 		To:       &head,
 		Straight: gitlab.Ptr(false), // Use three-dot comparison (like GitHub)
 	}
-	compare, _, err := client.Repositories.Compare(encodedPath, compareOpts, gitlab.WithContext(ctx))
+	compare, _, err := client.Repositories.Compare(projectPath, compareOpts, gitlab.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch comparison: %w", err)
 	}
@@ -41,20 +36,21 @@ func fetchDiff(ctx context.Context, client *gitlab.Client, host, projectPath, ba
 
 	// Initialize comparison with files and stats from GitLab
 	comparison := &types.Comparison{
-		RepoURL: fmt.Sprintf("https://%s/%s", host, projectPath),
-		DiffURL: diffURL,
-		Commits: make([]types.Commit, len(compare.Commits)),
-		Files:   files,
-		Stats:   calculateStats(files),
+		Platform: "gitlab",
+		RepoURL:  fmt.Sprintf("https://%s/%s", host, projectPath),
+		DiffURL:  diffURL,
+		Commits:  make([]types.Commit, len(compare.Commits)),
+		Files:    files,
+		Stats:    calculateStats(files),
 	}
 
-	// Process each commit for augmentation in parallel (MR number, QE labels)
+	// Process each commit for augmentation in parallel (MR number)
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // Limit concurrent API calls to avoid rate limiting
 
 	for i, commit := range compare.Commits {
 		g.Go(func() error {
-			comparison.Commits[i] = buildCommitEntry(gCtx, client, commit, encodedPath, cache)
+			comparison.Commits[i] = buildCommitEntry(gCtx, client, commit, projectPath)
 			return nil
 		})
 	}
@@ -65,8 +61,8 @@ func fetchDiff(ctx context.Context, client *gitlab.Client, host, projectPath, ba
 	return comparison, nil
 }
 
-// buildCommitEntry creates a commit entry from a GitLab commit with MR augmentation
-func buildCommitEntry(ctx context.Context, client *gitlab.Client, commit *gitlab.Commit, projectPath string, cache *mrCache) types.Commit {
+// buildCommitEntry creates a commit entry from a GitLab commit, resolving its MR number
+func buildCommitEntry(ctx context.Context, client *gitlab.Client, commit *gitlab.Commit, projectPath string) types.Commit {
 	entry := types.Commit{
 		SHA:      commit.ID,
 		ShortSHA: commit.ShortID,
@@ -99,28 +95,16 @@ func buildCommitEntry(ctx context.Context, client *gitlab.Client, commit *gitlab
 	slog.Debug("Found MR for commit", "commit", entry.ShortSHA, "mr", mrIID)
 	entry.PRNumber = mrIID
 
-	// Get MR object (cached)
-	mr, err := cache.getOrFetchMR(ctx, client, projectPath, mrIID)
-	if err != nil {
-		slog.Warn("Failed to get MR object", "mr", mrIID, "error", err)
-		return entry
-	}
-
-	// Extract QE testing label
-	entry.QETestingLabel = extractQELabel(mr)
-
-	slog.Debug("Augmented commit", "commit", entry.ShortSHA, "mr", mrIID, "qe_label", entry.QETestingLabel)
-
 	return entry
 }
 
 func getMRForCommit(ctx context.Context, client *gitlab.Client, projectPath, commitSHA string) (int64, error) {
 	mrs, _, err := client.Commits.ListMergeRequestsByCommit(projectPath, commitSHA, gitlab.WithContext(ctx))
 	if err != nil {
-		return 0, fmt.Errorf("failed to get MRs for commit %s: %w", commitSHA[:8], err)
+		return 0, fmt.Errorf("failed to get MRs for commit %s: %w", shortSHA(commitSHA), err)
 	}
 
-	slog.Debug("GitLab API response", "commit", commitSHA[:8], "found_mrs", len(mrs))
+	slog.Debug("GitLab API response", "commit", shortSHA(commitSHA), "found_mrs", len(mrs))
 
 	// Find first merged MR
 	for _, mr := range mrs {
@@ -130,14 +114,6 @@ func getMRForCommit(ctx context.Context, client *gitlab.Client, projectPath, com
 	}
 
 	return 0, nil
-}
-
-// extractQELabel extracts the QE testing label from a GitLab MR
-func extractQELabel(mr *gitlab.MergeRequest) string {
-	if mr == nil {
-		return ""
-	}
-	return shared.ExtractQELabel(mr.Labels)
 }
 
 // convertDiffs converts GitLab Diffs to platform-agnostic FileChanges
@@ -213,15 +189,25 @@ func parsePatchStats(patch string) (additions, deletions int) {
 		}
 		switch line[0] {
 		case '+':
-			if len(line) > 1 && line[1] != '+' { // Skip "+++ b/file" headers
+			// Skip only real "+++ b/file" headers; count added blank lines
+			// ("+") and content starting with '+' ("++i;")
+			if !strings.HasPrefix(line, "+++ ") {
 				additions++
 			}
 		case '-':
-			if len(line) > 1 && line[1] != '-' { // Skip "--- a/file" headers
+			if !strings.HasPrefix(line, "--- ") {
 				deletions++
 			}
 		}
 	}
 
 	return additions, deletions
+}
+
+// shortSHA returns the first 8 characters of a SHA, or the whole string if shorter.
+func shortSHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }

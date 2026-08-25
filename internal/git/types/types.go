@@ -5,67 +5,78 @@ import (
 )
 
 // Comparison represents a git comparison between two refs, platform-agnostic
-// Combines both raw diff data (files, stats) and augmented commit metadata (SHA, PR#, QE labels)
+// Combines both raw diff data (files, stats) and augmented commit metadata (SHA, PR#)
 type Comparison struct {
-	RepoURL string          // Repository URL (e.g., "https://github.com/owner/repo")
-	DiffURL string          // Direct link to the comparison/diff
-	Commits []Commit        // Commits in this comparison with full metadata
-	Files   []FileChange    // Files changed in this comparison
-	Stats   ComparisonStats // Statistics about the comparison
+	Platform string          `json:"platform"` // "github" or "gitlab"
+	RepoURL  string          `json:"repo_url"` // Repository URL (e.g., "https://github.com/owner/repo")
+	DiffURL  string          `json:"diff_url"` // Direct link to the comparison/diff
+	Commits  []Commit        `json:"commits"`  // Commits in this comparison with full metadata
+	Files    []FileChange    `json:"files"`    // Files changed in this comparison
+	Stats    ComparisonStats `json:"stats"`    // Statistics about the comparison
+
+	// FilesMayBeTruncated is set when the platform API capped the file list
+	// (GitHub's compare API returns at most 300 files), meaning Files and
+	// Stats describe only part of the diff.
+	FilesMayBeTruncated bool `json:"files_may_be_truncated,omitempty"`
 }
 
 // ComparisonStats represents statistics about the comparison
 type ComparisonStats struct {
-	TotalFiles     int
-	TotalAdditions int
-	TotalDeletions int
-	TotalChanges   int
+	TotalFiles     int `json:"total_files"`
+	TotalAdditions int `json:"total_additions"`
+	TotalDeletions int `json:"total_deletions"`
+	TotalChanges   int `json:"total_changes"`
 }
 
 // Commit represents a single commit with augmented metadata
 type Commit struct {
-	SHA            string // Full commit SHA
-	ShortSHA       string // Short SHA for display
-	Message        string // Commit message (first line only)
-	Author         string // Author name
-	PRNumber       int64  // Associated PR/MR number (0 if none)
-	QETestingLabel string // QE testing label status: "qe-tested", "needs-qe-testing", or empty
+	SHA      string `json:"sha"`       // Full commit SHA
+	ShortSHA string `json:"short_sha"` // Short SHA for display
+	Message  string `json:"message"`   // Commit message (first line only)
+	Author   string `json:"author"`    // Author name
+	PRNumber int64  `json:"pr_number"` // Associated PR/MR number (0 if none)
 }
 
 // FileChange represents a file that was changed in a comparison
 type FileChange struct {
-	Filename         string
-	Status           string // added, modified, removed, renamed
-	Additions        int
-	Deletions        int
-	Changes          int
-	Patch            string
-	PreviousFilename string // For renames
+	Filename         string `json:"filename"`
+	Status           string `json:"status"` // added, modified, removed, renamed
+	Additions        int    `json:"additions"`
+	Deletions        int    `json:"deletions"`
+	Changes          int    `json:"changes"`
+	Patch            string `json:"patch,omitempty"`
+	PreviousFilename string `json:"previous_filename,omitempty"` // For renames
 }
 
 // Repository represents basic repository information
 type Repository struct {
-	Owner         string
-	Name          string
-	DefaultBranch string
-	URL           string
+	Platform      string `json:"platform"` // "github" or "gitlab"
+	Owner         string `json:"owner"`
+	Name          string `json:"name"`
+	DefaultBranch string `json:"default_branch"`
+	URL           string `json:"url"`
 }
 
 // Documentation represents repository documentation
 type Documentation struct {
-	MainDocContent        string
-	MainDocFile           string
-	AdditionalDocsContent map[string]string // Successfully fetched linked docs: display name -> content
-	AdditionalDocsOrder   []string          // Order of successfully fetched docs
-	FailedAdditionalDocs  map[string]string // Failed linked docs: display name -> error message
-	Repository            Repository
+	MainDocContent        string            `json:"main_doc_content,omitempty"`
+	MainDocFile           string            `json:"main_doc_file,omitempty"`
+	AdditionalDocsContent map[string]string `json:"additional_docs_content,omitempty"` // Successfully fetched linked docs: display name -> content
+	AdditionalDocsOrder   []string          `json:"additional_docs_order,omitempty"`   // Order of successfully fetched docs
+	FailedAdditionalDocs  map[string]string `json:"failed_additional_docs,omitempty"`  // Failed linked docs: display name -> error message
+	Repository            Repository        `json:"repository"`
+
+	// FetchError is set when the main documentation lookup failed for a
+	// reason other than the file not existing (auth failure, network error,
+	// server error) — "docs unavailable" rather than "docs absent".
+	FetchError string `json:"fetch_error,omitempty"`
 }
 
 // UserGuidance represents a complete user guidance with metadata for reporting
 type UserGuidance struct {
-	Content      string    // The actual guidance content
-	Author       string    // Platform username who posted it
-	Date         time.Time // When it was posted
-	CommentURL   string    // Direct link to the comment
-	IsAuthorized bool      // Whether the author had permission to post
+	Content      string    `json:"content"`       // The actual guidance content
+	Author       string    `json:"author"`        // Platform username who posted it
+	Date         time.Time `json:"date"`          // When it was posted
+	CommentURL   string    `json:"comment_url"`   // Direct link to the comment
+	IsAuthorized bool      `json:"is_authorized"` // Whether the author had permission to post
 }

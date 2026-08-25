@@ -1,0 +1,9 @@
+Soundings
+Copyright 2026 Gwenneg Lepage
+
+This project contains code derived from Release Confidence Score
+(https://github.com/RedHatInsights/release-confidence-score),
+Copyright Red Hat, Inc., licensed under the Apache License, Version 2.0.
+
+The derived code was extracted with full git history preserved; original
+commit authorship is retained in this repository's history.

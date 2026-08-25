@@ -210,36 +210,3 @@ func TestSplitProjectPath(t *testing.T) {
 		})
 	}
 }
-
-func TestUrlEncodeProjectPath(t *testing.T) {
-	tests := []struct {
-		name string
-		path string
-		want string
-	}{
-		{
-			name: "simple path",
-			path: "owner/repo",
-			want: "owner%2Frepo",
-		},
-		{
-			name: "nested group",
-			path: "group/subgroup/repo",
-			want: "group%2Fsubgroup%2Frepo",
-		},
-		{
-			name: "no encoding needed",
-			path: "repo",
-			want: "repo",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := urlEncodeProjectPath(tt.path)
-			if got != tt.want {
-				t.Errorf("urlEncodeProjectPath(%q) = %q, want %q", tt.path, got, tt.want)
-			}
-		})
-	}
-}

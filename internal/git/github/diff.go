@@ -6,8 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"release-confidence-score/internal/git/shared"
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/git/types"
 
 	"github.com/google/go-github/v90/github"
 	"golang.org/x/sync/errgroup"
@@ -16,7 +15,7 @@ import (
 // fetchDiff fetches comparison data from GitHub and augments commits with PR metadata
 // Returns a complete Comparison with augmented commits, files, and stats
 // The cache parameter allows sharing cached PR objects across multiple operations
-func fetchDiff(ctx context.Context, client *github.Client, owner, repo, base, head, diffURL string, cache *prCache) (*types.Comparison, error) {
+func fetchDiff(ctx context.Context, client *github.Client, owner, repo, base, head, diffURL string) (*types.Comparison, error) {
 	slog.Debug("Starting comparison fetch and commit augmentation", "owner", owner, "repo", repo, "base", base, "head", head)
 
 	// Fetch comparison data with all commits (handles pagination)
@@ -29,20 +28,29 @@ func fetchDiff(ctx context.Context, client *github.Client, owner, repo, base, he
 
 	// Initialize comparison with files and stats from GitHub
 	comparison := &types.Comparison{
-		RepoURL: fmt.Sprintf("https://github.com/%s/%s", owner, repo),
-		DiffURL: diffURL,
-		Commits: make([]types.Commit, len(allCommits)),
-		Files:   convertFiles(ghComparison.Files),
-		Stats:   calculateStats(ghComparison.Files),
+		Platform: "github",
+		RepoURL:  fmt.Sprintf("https://github.com/%s/%s", owner, repo),
+		DiffURL:  diffURL,
+		Commits:  make([]types.Commit, len(allCommits)),
+		Files:    convertFiles(ghComparison.Files),
+		Stats:    calculateStats(ghComparison.Files),
 	}
 
-	// Process each commit for augmentation in parallel (PR number, QE labels)
+	// GitHub's compare API returns at most 300 files and offers no way to
+	// page through the rest; flag it so the analysis knows the diff is partial.
+	if len(ghComparison.Files) >= 300 {
+		comparison.FilesMayBeTruncated = true
+		slog.Warn("GitHub compare returned 300 files - the platform caps this list, so the diff may be incomplete",
+			"owner", owner, "repo", repo)
+	}
+
+	// Process each commit for augmentation in parallel (PR number)
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // Limit concurrent API calls to avoid rate limiting
 
 	for i, commit := range allCommits {
 		g.Go(func() error {
-			comparison.Commits[i] = buildCommitEntry(gCtx, client, commit, owner, repo, cache)
+			comparison.Commits[i] = buildCommitEntry(gCtx, client, commit, owner, repo)
 			return nil
 		})
 	}
@@ -53,11 +61,11 @@ func fetchDiff(ctx context.Context, client *github.Client, owner, repo, base, he
 	return comparison, nil
 }
 
-// buildCommitEntry creates a commit entry from a GitHub commit with PR augmentation
-func buildCommitEntry(ctx context.Context, client *github.Client, commit *github.RepositoryCommit, owner, repo string, cache *prCache) types.Commit {
+// buildCommitEntry creates a commit entry from a GitHub commit, resolving its PR number
+func buildCommitEntry(ctx context.Context, client *github.Client, commit *github.RepositoryCommit, owner, repo string) types.Commit {
 	entry := types.Commit{
 		SHA:      commit.GetSHA(),
-		ShortSHA: commit.GetSHA()[:8],
+		ShortSHA: shortSHA(commit.GetSHA()),
 		Message:  "No message",
 		Author:   "Unknown",
 	}
@@ -87,28 +95,16 @@ func buildCommitEntry(ctx context.Context, client *github.Client, commit *github
 	slog.Debug("Found PR for commit", "commit", entry.ShortSHA, "pr", prNumber)
 	entry.PRNumber = int64(prNumber)
 
-	// Get PR object (cached)
-	pr, err := cache.getOrFetchPR(ctx, client, owner, repo, prNumber)
-	if err != nil {
-		slog.Warn("Failed to get PR object", "pr", prNumber, "error", err)
-		return entry
-	}
-
-	// Extract QE testing label
-	entry.QETestingLabel = extractQELabel(pr)
-
-	slog.Debug("Augmented commit", "commit", entry.ShortSHA, "pr", prNumber, "qe_label", entry.QETestingLabel)
-
 	return entry
 }
 
 func getPRForCommit(ctx context.Context, client *github.Client, owner, repo, commitSHA string) (int, error) {
 	prs, resp, err := client.PullRequests.ListPullRequestsWithCommit(ctx, owner, repo, commitSHA, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to find PRs for commit %s: %w", commitSHA[:8], err)
+		return 0, fmt.Errorf("failed to find PRs for commit %s: %w", shortSHA(commitSHA), err)
 	}
 
-	slog.Debug("GitHub API response", "commit", commitSHA[:8], "found_prs", len(prs), "rate_limit_remaining", resp.Rate.Remaining)
+	slog.Debug("GitHub API response", "commit", shortSHA(commitSHA), "found_prs", len(prs), "rate_limit_remaining", resp.Rate.Remaining)
 
 	// Find first merged PR
 	for _, pr := range prs {
@@ -118,18 +114,6 @@ func getPRForCommit(ctx context.Context, client *github.Client, owner, repo, com
 	}
 
 	return 0, nil
-}
-
-// extractQELabel extracts the QE testing label from a PR
-func extractQELabel(pr *github.PullRequest) string {
-	if pr == nil {
-		return ""
-	}
-	labelNames := make([]string, len(pr.Labels))
-	for i, label := range pr.Labels {
-		labelNames[i] = label.GetName()
-	}
-	return shared.ExtractQELabel(labelNames)
 }
 
 // fetchComparisonWithPagination fetches comparison data with full commit pagination
@@ -164,6 +148,14 @@ func fetchComparisonWithPagination(ctx context.Context, client *github.Client, o
 	}
 
 	return comparisonData, allCommits, nil
+}
+
+// shortSHA returns the first 8 characters of a SHA, or the whole string if shorter.
+func shortSHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 // convertFiles converts GitHub CommitFiles to platform-agnostic FileChanges

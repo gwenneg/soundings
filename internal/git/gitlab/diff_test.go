@@ -3,66 +3,10 @@ package gitlab
 import (
 	"testing"
 
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/git/types"
 
 	"gitlab.com/gitlab-org/api/client-go/v2"
 )
-
-func TestExtractQELabel(t *testing.T) {
-	tests := []struct {
-		name     string
-		mr       *gitlab.MergeRequest
-		expected string
-	}{
-		{
-			name:     "nil MR",
-			mr:       nil,
-			expected: "",
-		},
-		{
-			name:     "no labels",
-			mr:       &gitlab.MergeRequest{BasicMergeRequest: gitlab.BasicMergeRequest{Labels: gitlab.Labels{}}},
-			expected: "",
-		},
-		{
-			name: "qe-tested label",
-			mr: &gitlab.MergeRequest{
-				BasicMergeRequest: gitlab.BasicMergeRequest{Labels: gitlab.Labels{"rcs/qe-tested"}},
-			},
-			expected: "rcs/qe-tested",
-		},
-		{
-			name: "needs-qe-testing label",
-			mr: &gitlab.MergeRequest{
-				BasicMergeRequest: gitlab.BasicMergeRequest{Labels: gitlab.Labels{"rcs/needs-qe-testing"}},
-			},
-			expected: "rcs/needs-qe-testing",
-		},
-		{
-			name: "both labels - qe-tested wins",
-			mr: &gitlab.MergeRequest{
-				BasicMergeRequest: gitlab.BasicMergeRequest{Labels: gitlab.Labels{"rcs/needs-qe-testing", "rcs/qe-tested"}},
-			},
-			expected: "rcs/qe-tested",
-		},
-		{
-			name: "unrelated labels",
-			mr: &gitlab.MergeRequest{
-				BasicMergeRequest: gitlab.BasicMergeRequest{Labels: gitlab.Labels{"bug", "enhancement"}},
-			},
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := extractQELabel(tt.mr)
-			if result != tt.expected {
-				t.Errorf("extractQELabel() = %q, want %q", result, tt.expected)
-			}
-		})
-	}
-}
 
 func TestConvertDiff(t *testing.T) {
 	tests := []struct {

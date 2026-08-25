@@ -9,10 +9,10 @@ import (
 	"sync"
 
 	githubapi "github.com/google/go-github/v90/github"
+	"github.com/gwenneg/soundings/internal/config"
+	"github.com/gwenneg/soundings/internal/git/shared"
+	"github.com/gwenneg/soundings/internal/git/types"
 	"golang.org/x/sync/errgroup"
-	"release-confidence-score/internal/config"
-	"release-confidence-score/internal/git/shared"
-	"release-confidence-score/internal/git/types"
 )
 
 // githubCompareRegex matches GitHub compare URLs and extracts components
@@ -70,7 +70,7 @@ func (f *Fetcher) FetchReleaseData(ctx context.Context, compareURL string) (*typ
 	// Fetch diff and user guidance (sequential, as guidance depends on diff)
 	g.Go(func() error {
 		var err error
-		comparison, err = fetchDiff(gCtx, f.client, owner, repo, baseCommit, headCommit, compareURL, cache)
+		comparison, err = fetchDiff(gCtx, f.client, owner, repo, baseCommit, headCommit, compareURL)
 		if err != nil {
 			return fmt.Errorf("failed to fetch and enrich comparison: %w", err)
 		}

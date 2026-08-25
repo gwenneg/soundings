@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/git/types"
 
 	"github.com/google/go-github/v90/github"
 )
@@ -186,7 +186,7 @@ func TestProcessComment(t *testing.T) {
 	}{
 		{
 			name:           "valid guidance from PR author",
-			body:           "/rcs note This is important guidance",
+			body:           "/soundings note This is important guidance",
 			author:         prAuthor,
 			expectGuidance: true,
 			expectError:    false,
@@ -199,8 +199,8 @@ func TestProcessComment(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name:           "invalid rcs pattern",
-			body:           "Before text /rcs should not match",
+			name:           "invalid soundings pattern",
+			body:           "Before text /soundings should not match",
 			author:         "someone",
 			expectGuidance: false,
 			expectError:    false,

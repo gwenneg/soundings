@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/git/types"
 
 	"gitlab.com/gitlab-org/api/client-go/v2"
 )
@@ -88,7 +88,7 @@ func TestProcessNote(t *testing.T) {
 			name: "valid guidance from MR author",
 			note: &gitlab.Note{
 				ID:        1,
-				Body:      "/rcs note This is important guidance",
+				Body:      "/soundings note This is important guidance",
 				Author:    gitlab.NoteAuthor{Username: "author"},
 				CreatedAt: &now,
 			},
@@ -101,7 +101,7 @@ func TestProcessNote(t *testing.T) {
 			name: "valid guidance from approver",
 			note: &gitlab.Note{
 				ID:        2,
-				Body:      "/rcs note This is guidance from approver",
+				Body:      "/soundings note This is guidance from approver",
 				Author:    gitlab.NoteAuthor{Username: "approver1"},
 				CreatedAt: &now,
 			},
@@ -114,7 +114,7 @@ func TestProcessNote(t *testing.T) {
 			name: "guidance from unauthorized user",
 			note: &gitlab.Note{
 				ID:        3,
-				Body:      "/rcs note This is unauthorized guidance",
+				Body:      "/soundings note This is unauthorized guidance",
 				Author:    gitlab.NoteAuthor{Username: "stranger"},
 				CreatedAt: &now,
 			},
@@ -137,10 +137,10 @@ func TestProcessNote(t *testing.T) {
 			expectAuth:     false,
 		},
 		{
-			name: "invalid rcs pattern",
+			name: "invalid soundings pattern",
 			note: &gitlab.Note{
 				ID:        5,
-				Body:      "Before text /rcs should not match",
+				Body:      "Before text /soundings should not match",
 				Author:    gitlab.NoteAuthor{Username: "author"},
 				CreatedAt: &now,
 			},

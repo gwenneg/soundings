@@ -1,0 +1,14 @@
+{
+  "name": "soundings",
+  "owner": {
+    "name": "Gwenneg Lepage",
+    "url": "https://github.com/gwenneg"
+  },
+  "plugins": [
+    {
+      "name": "soundings",
+      "source": "./",
+      "description": "Take soundings before you ship - release confidence scores and risk reports for GitHub/GitLab compare URLs."
+    }
+  ]
+}

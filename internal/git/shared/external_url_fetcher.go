@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	httputil "release-confidence-score/internal/http"
+	httputil "github.com/gwenneg/soundings/internal/http"
 )
 
 const httpTimeout = 30 * time.Second
@@ -19,14 +19,12 @@ const maxResponseBodySize = 1 << 20
 
 // fetchExternalURL fetches content from an external URL
 func (d *DocumentationFetcher) fetchExternalURL(ctx context.Context, urlStr string) (string, error) {
-	// Determine if this is a GitLab URL for SSL verification settings
+	// Determine if this is a GitLab URL for token-forwarding decisions
 	gitlabHost := gitlabHostname(d.config.GitLabBaseURL)
 	isGitLab := isGitLabURL(urlStr, gitlabHost)
-	skipSSLVerify := isGitLab && d.config.GitLabSkipSSLVerify
 
 	httpClient := httputil.NewHTTPClient(httputil.HTTPClientOptions{
 		Timeout:         httpTimeout,
-		SkipSSLVerify:   skipSSLVerify,
 		BlockPrivateIPs: true,
 		// The configured GitLab instance is a trusted destination that may
 		// legitimately live on a private IP; anything else comes from
@@ -35,6 +33,20 @@ func (d *DocumentationFetcher) fetchExternalURL(ctx context.Context, urlStr stri
 		// private host is still blocked.
 		AllowedPrivateHost: gitlabHost,
 	})
+
+	// Go's redirect logic strips Authorization/Cookie on cross-host redirects
+	// but knows nothing about PRIVATE-TOKEN. Strip it ourselves on any hop
+	// whose host is not the trusted GitLab instance, so a repo-controlled URL
+	// that redirects off-host cannot capture the token.
+	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		if !isGitLabURL(req.URL.String(), gitlabHost) {
+			req.Header.Del("PRIVATE-TOKEN")
+		}
+		return nil
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"release-confidence-score/internal/config"
-	"release-confidence-score/internal/git/types"
+	"github.com/gwenneg/soundings/internal/config"
+	"github.com/gwenneg/soundings/internal/git/types"
 )
 
 func TestFetchExternalURL_Success(t *testing.T) {

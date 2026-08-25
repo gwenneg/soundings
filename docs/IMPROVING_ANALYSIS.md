@@ -8,7 +8,7 @@ This guide explains how to get more accurate confidence scores and better analys
 
 **Impact: High** | **Effort: Medium** | **One-time setup**
 
-Create a `.release-confidence-docs.md` file in your repository root. This gives the AI context about your service, its criticality, dependencies, and known risk areas.
+Create a `.soundings-docs.md` file in your repository root. This gives the AI context about your service, its criticality, dependencies, and known risk areas.
 
 ```markdown
 # Release Documentation
@@ -37,7 +37,7 @@ Create a `.release-confidence-docs.md` file in your repository root. This gives 
 - Analysis considers your specific risk areas
 - Recommendations are tailored to your architecture
 
-See [`.release-confidence-docs.example.md`](../.release-confidence-docs.example.md) for a comprehensive template.
+See [`.soundings-docs.example.md`](../.soundings-docs.example.md) for a comprehensive template.
 
 ---
 
@@ -45,10 +45,10 @@ See [`.release-confidence-docs.example.md`](../.release-confidence-docs.example.
 
 **Impact: High** | **Effort: Low** | **Per-PR/MR**
 
-Add `/rcs note` comments in your pull request or merge request to provide context the AI can't infer from code alone:
+Add `/soundings note` comments in your pull request or merge request to provide context the AI can't infer from code alone:
 
 ```
-/rcs note This change updates the rate limiting logic. The new limits have been
+/soundings note This change updates the rate limiting logic. The new limits have been
 load tested and approved by the platform team. No database changes required.
 ```
 
@@ -62,24 +62,7 @@ load tested and approved by the platform team. No database changes required.
 
 ---
 
-### 3. Apply QE Testing Labels
-
-**Impact: Medium** | **Effort: Low** | **Per-PR/MR**
-
-Apply labels to indicate QE testing status:
-- `rcs/qe-tested` - Changes verified by QE team
-- `rcs/needs-qe-testing` - Changes require QE verification
-
-These labels work on both GitHub PRs and GitLab MRs.
-
-**Why this helps:**
-- AI factors testing coverage into confidence scoring
-- Untested critical changes are flagged appropriately
-- Report shows QE status for each commit
-
----
-
-### 4. Write Clear Commit Messages
+### 3. Write Clear Commit Messages
 
 **Impact: Medium** | **Effort: Low** | **Per-commit**
 
@@ -108,7 +91,7 @@ leaving orphaned sessions in Redis.
 
 ## Optimizing Your Workflow
 
-### 5. Keep Changes Focused
+### 4. Keep Changes Focused
 
 **Impact: Medium** | **Effort: Medium**
 
@@ -134,24 +117,15 @@ Separate high-risk and low-risk changes:
 
 ---
 
-### 6. Manage Diff Size
+### 5. Manage Diff Size
 
 **Impact: Low-Medium** | **Effort: Medium**
 
-The tool handles large diffs through intelligent truncation, but smaller diffs receive more thorough analysis:
-
-| Size | Analysis Quality |
-|------|------------------|
-| < 500 lines | Full analysis, no truncation |
-| 500-1,500 lines | Full analysis in most cases |
-| 1,500-5,000 lines | May trigger light truncation |
-| > 5,000 lines | Progressive truncation applied |
-
-**Truncation preserves:**
-- All file metadata and statistics
-- Complete patches for critical files (database, auth, security, API)
-- Complete patches for infrastructure files
-- Start and end of truncated patches
+Large diffs are handled by reading with judgment rather than truncating: the
+analysis always sees every file's metadata, statistics, and risk tier, reads
+critical and high-risk patches in full, and decides how deeply to read the
+rest. Smaller, focused changes still get the most thorough treatment —
+everything is read in full, and the report says what was read versus skimmed.
 
 **Tips for large changes:**
 - Break features into incremental PRs/MRs
@@ -160,11 +134,11 @@ The tool handles large diffs through intelligent truncation, but smaller diffs r
 
 ---
 
-### 7. Link Related Documentation
+### 6. Link Related Documentation
 
 **Impact: Low-Medium** | **Effort: Low**
 
-In your `.release-confidence-docs.md`, add links in the "Additional Documentation" section:
+In your `.soundings-docs.md`, add links in the "Additional Documentation" section:
 
 ```markdown
 ## Additional Documentation
@@ -198,7 +172,7 @@ Default thresholds (configurable via environment variables):
 ### Factors That Improve Scores
 
 - Comprehensive repository documentation
-- QE testing completed (`rcs/qe-tested` label)
+- Test coverage evidenced in the diff (tests changed alongside code)
 - Small, focused changes
 - Clear commit messages
 - User guidance providing context
@@ -211,29 +185,30 @@ Default thresholds (configurable via environment variables):
 - High-risk changes (database, auth, API contracts)
 - Large, complex diffs
 - Multiple unrelated changes in one PR/MR
-- No QE testing on critical paths
+- Critical paths changed without accompanying tests
 - Unclear purpose or impact
 - Infrastructure changes without context
 
 ### Risk Categories
 
-The tool classifies files by risk level for truncation decisions:
+The tool classifies files by risk tier to prioritize how deeply each is read:
 
-**Critical (never truncated):**
+**Critical (always read in full):**
 - Database: migrations, schema files, SQL
 - Security: auth, tokens, credentials, permissions
 - APIs: OpenAPI specs, protobuf, GraphQL schemas
 
-**High (preserved in most modes):**
+**High (read in full unless very large):**
 - Infrastructure: Dockerfile, Terraform, Kubernetes
 - Configuration: CI/CD pipelines, build configs
 - Deployment: Helm charts, Ansible playbooks
 
-**Medium (truncated in aggressive modes):**
+**Medium (read proportionately to size):**
+- Application code
 - Dependencies: package.json, go.mod, requirements.txt
 - Lock files: package-lock.json, go.sum
 
-**Low (truncated first):**
+**Low (skimmed, used as evidence of coverage):**
 - Tests: *_test.go, *.spec.js, test_*.py
 - Documentation: *.md, docs/
 - IDE/tooling: .vscode/, .editorconfig
@@ -245,19 +220,18 @@ The tool classifies files by risk level for truncation decisions:
 ### "My score is lower than expected"
 
 **Checklist:**
-- [ ] Did you add `/rcs note` guidance explaining the changes?
+- [ ] Did you add `/soundings note` guidance explaining the changes?
 - [ ] Is repository documentation present and current?
 - [ ] Are commit messages descriptive?
-- [ ] Did you apply QE testing labels?
 - [ ] Is the PR/MR focused on one concern?
 
-**Quick fix:** Add a `/rcs note` comment explaining why changes are safe.
+**Quick fix:** Add a `/soundings note` comment explaining why changes are safe.
 
 ---
 
 ### "The AI doesn't understand my service"
 
-**Solution:** Create or improve `.release-confidence-docs.md`
+**Solution:** Create or improve `.soundings-docs.md`
 
 Include:
 - Service criticality and SLA
@@ -276,7 +250,7 @@ Include:
 3. Mixed with higher-risk changes
 
 **Solutions:**
-- Add `/rcs note` guidance: `/rcs note These config files are test fixtures, not production configuration`
+- Add `/soundings note` guidance: `/soundings note These config files are test fixtures, not production configuration`
 - Separate low-risk changes into their own PR/MR
 - Update repository documentation to clarify
 
@@ -285,9 +259,9 @@ Include:
 ### "Large refactoring PR/MR"
 
 **Best practices:**
-1. Add detailed `/rcs note` guidance explaining the scope
-2. Confirm behavior is unchanged: `/rcs note Pure refactoring, no behavior changes. All tests pass.`
-3. Reference test results or QE validation
+1. Add detailed `/soundings note` guidance explaining the scope
+2. Confirm behavior is unchanged: `/soundings note Pure refactoring, no behavior changes. All tests pass.`
+3. Reference test results or validation evidence
 4. Consider breaking into smaller incremental changes
 
 ---
@@ -296,10 +270,9 @@ Include:
 
 ### Before Submitting
 
-- [ ] Repository has `.release-confidence-docs.md`
-- [ ] Added `/rcs note` guidance with relevant context
+- [ ] Repository has `.soundings-docs.md`
+- [ ] Added `/soundings note` guidance with relevant context
 - [ ] Commit messages explain "why" not just "what"
-- [ ] Applied QE testing labels if applicable
 - [ ] PR/MR is focused on a single concern
 - [ ] Documentation updated to reflect changes
 
@@ -308,72 +281,32 @@ Include:
 - [ ] Review all action items, especially "Critical"
 - [ ] Understand identified risk factors
 - [ ] Address documentation recommendations
-- [ ] Add clarifying `/rcs note` guidance if AI missed context
+- [ ] Add clarifying `/soundings note` guidance if AI missed context
 - [ ] Re-run analysis if significant context was added
-- [ ] If proceeding despite a "Not Recommended" result, post an `/rcs override` comment in the MR with your justification (see below)
-
----
-
-## Overriding a "Not Recommended" Recommendation
-
-> **Note:** This section applies to **app-interface mode** only, where the report is posted to a GitLab merge request. In standalone mode, there is no associated MR/PR to post the justification to.
-
-When RCS produces a **"Release Not Recommended"** result and you decide to proceed anyway, post a comment in the merge request using `/rcs override <your justification>`.
-
-**Examples:**
-
-```
-/rcs override The database migration was load-tested on a production-sized staging environment.
-Index creation completed in under 60 seconds with no lock contention. Team is on standby for rollback.
-```
-
-```
-/rcs override All critical action items addressed — deployment split into two phases per the report
-recommendation. The remaining concerns are informational only and will be monitored post-release.
-```
-
-**What makes a good justification:**
-- Explains why the specific concerns raised are acceptable or already mitigated
-- References testing, staging results, or on-call coverage if relevant
-- Notes any action items that were resolved before proceeding
-
-**Why this matters:** The justification is recorded in the PR/MR thread, creating an audit trail. It also surfaces false positives that can be used to improve the tool — if RCS flagged something that turned out to be safe, reporting it helps calibrate future analyses.
-
-To report a false positive or false negative, open an issue at the [project repository](https://github.com/RedHatInsights/release-confidence-score/issues).
 
 ---
 
 ## Configuration Reference
 
-### Environment Variables
+### Score Thresholds
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RCS_SCORE_THRESHOLD_AUTO_DEPLOY` | 80 | Score for "recommended" status |
-| `RCS_SCORE_THRESHOLD_REVIEW_REQUIRED` | 60 | Score below which review is required |
-| `RCS_SYSTEM_PROMPT_VERSION` | v1 | System prompt version (v1, v2) |
+Thresholds are parameters of the analysis invocation (defaults: 80 for
+"recommended", 60 for "review required"); callers such as orchestrating
+skills may pass their own values.
 
-### QE Labels
-
-| Label | Meaning |
-|-------|---------|
-| `rcs/qe-tested` | Changes verified by QE |
-| `rcs/needs-qe-testing` | Changes require QE verification |
-
----
 
 ## Getting Help
 
 ### The Analysis Seems Wrong
 
-1. **Add context via `/rcs note`** - The AI works with available information
-2. **Update documentation** - Ensure `.release-confidence-docs.md` reflects reality
-3. **Check truncation** - Large diffs may have relevant code truncated
+1. **Add context via `/soundings note`** - The AI works with available information
+2. **Update documentation** - Ensure `.soundings-docs.md` reflects reality
+3. **Check read depth** - The report notes what was read in full versus skimmed; very large diffs mean lighter reading of low-risk files
 4. **Review action items** - Sometimes the AI catches real issues
 
 ### Contributing
 
-Report issues or suggestions at the [project repository](https://github.com/RedHatInsights/release-confidence-score).
+Report issues or suggestions at the [project repository](https://github.com/gwenneg/soundings).
 
 ---
 

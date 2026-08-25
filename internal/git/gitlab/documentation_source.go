@@ -3,10 +3,12 @@ package gitlab
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"net/url"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
+
+	"github.com/gwenneg/soundings/internal/git/shared"
 )
 
 // documentationSource implements DocumentationSource interface for GitLab
@@ -27,7 +29,7 @@ func newDocumentationSource(client *gitlab.Client, host, projectPath string) *do
 
 // GetDefaultBranch returns the default branch name for the repository
 func (d *documentationSource) GetDefaultBranch(ctx context.Context) (string, error) {
-	project, _, err := d.client.Projects.GetProject(url.PathEscape(d.projectPath), &gitlab.GetProjectOptions{}, gitlab.WithContext(ctx))
+	project, _, err := d.client.Projects.GetProject(d.projectPath, &gitlab.GetProjectOptions{}, gitlab.WithContext(ctx))
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch repository info for %s: %w", d.projectPath, err)
 	}
@@ -44,8 +46,11 @@ func (d *documentationSource) GetDefaultBranch(ctx context.Context) (string, err
 func (d *documentationSource) FetchFileContent(ctx context.Context, path, ref string) (string, error) {
 	// Use GitLab SDK to fetch file content
 	opts := &gitlab.GetFileOptions{Ref: &ref}
-	file, _, err := d.client.RepositoryFiles.GetFile(url.PathEscape(d.projectPath), path, opts, gitlab.WithContext(ctx))
+	file, _, err := d.client.RepositoryFiles.GetFile(d.projectPath, path, opts, gitlab.WithContext(ctx))
 	if err != nil {
+		if errors.Is(err, gitlab.ErrNotFound) {
+			return "", fmt.Errorf("%w: %s in %s", shared.ErrDocNotFound, path, d.projectPath)
+		}
 		return "", fmt.Errorf("failed to fetch %s from %s: %w", path, d.projectPath, err)
 	}
 
