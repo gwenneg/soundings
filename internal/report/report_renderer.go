@@ -146,6 +146,11 @@ func getReleaseRecommendation(score, autoDeployThreshold, reviewRequiredThreshol
 
 // StructuredAnalysis represents the LLM's analysis output in a structured format (v2 schema)
 type StructuredAnalysis struct {
+	// Model names the model that produced this analysis - the assessing
+	// agent states its own identity, and the report footer credits it.
+	// Required by the render command's validation; the renderer itself
+	// tolerates absence for library callers.
+	Model                        string           `json:"model,omitempty"`
 	Score                        int              `json:"score"`
 	Summary                      string           `json:"summary"`
 	RiskSummary                  RiskSummary      `json:"risk_summary"`
@@ -221,6 +226,13 @@ func GenerateReport(config *ReportConfig) (score int, report string, err error) 
 	var analysis StructuredAnalysis
 	if err := json.Unmarshal([]byte(jsonContent), &analysis); err != nil {
 		return 0, "", fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	// The footer credits the model stated by the analysis itself: the
+	// assessing agent is the one whose model matters, and only it knows
+	// what it ran as.
+	if analysis.Model != "" && config.Metadata != nil {
+		config.Metadata.ModelID = analysis.Model
 	}
 
 	// Sort user guidance by date (ascending)

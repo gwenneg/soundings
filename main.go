@@ -71,7 +71,7 @@ USAGE:
   soundings fetch --out <dir> <compare-url> [<compare-url>...]
   soundings render --analysis <file> --data <dir> [--auto-deploy 80] [--review-required 60]
                    [--feedback-url <url>] [--app-interface-mode] [--extra-guidance <file>]
-                   [--model-id <id>] [-o <file>]
+                   [-o <file>]
 
 AUTH:
   GitHub: GITHUB_TOKEN, or 'gh auth login'
@@ -459,7 +459,6 @@ func runRender(args []string) error {
 	feedbackURL := fs.String("feedback-url", "", "optional feedback URL embedded in the report")
 	appInterfaceMode := fs.Bool("app-interface-mode", false, "enable app-interface report conventions (override-justification banner)")
 	extraGuidance := fs.String("extra-guidance", "", "optional JSON file with additional pre-authorized guidance entries")
-	modelID := fs.String("model-id", "claude-code", "model identifier for the report footer")
 	outFile := fs.String("o", "", "write report to file instead of stdout")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -514,7 +513,7 @@ func runRender(args []string) error {
 
 	_, out, err := report.GenerateReport(&report.ReportConfig{
 		LLMResponse:             analysisJSON,
-		Metadata:                &report.ReportMetadata{ModelID: *modelID, GenerationTime: time.Now().UTC()},
+		Metadata:                &report.ReportMetadata{GenerationTime: time.Now().UTC()},
 		Comparisons:             comparisons,
 		Documentation:           documentation,
 		UserGuidance:            guidance,
@@ -640,6 +639,9 @@ func validateAnalysis(data []byte) []string {
 	}
 	if dec.More() {
 		return []string{"trailing content after the JSON object: the file must contain exactly one JSON object and nothing else"}
+	}
+	if strings.TrimSpace(a.Model) == "" {
+		errs = append(errs, "model: required - state the exact model identifier that produced this analysis (the assess agent's own identity)")
 	}
 	if a.Score < 0 || a.Score > 100 {
 		errs = append(errs, fmt.Sprintf("score: must be 0-100, got %d", a.Score))

@@ -73,7 +73,11 @@ go -C "$CLAUDE_PLUGIN_ROOT" run . render --analysis <analysis.json> --data <scra
   [--app-interface-mode] [--extra-guidance <file>]
 ```
 
-Pass threshold/feedback/guidance flags only when the caller provided them.
+The report footer credits the model named inside the analysis JSON — the
+assess agent states its own identity there, and validation rejects an
+analysis that omits it. There is no fallback; never supply the model
+yourself. Pass
+threshold/feedback/guidance flags only when the caller provided them.
 The renderer validates the JSON and prints field-level errors on mismatch —
 re-launch the `assess` agent with those errors appended to its prompt so it
 can correct its output; do not repair the analysis yourself. The renderer

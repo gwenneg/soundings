@@ -706,6 +706,37 @@ func TestGenerateReportWithDocumentation(t *testing.T) {
 	}
 }
 
+func TestGenerateReportPrefersAnalysisModel(t *testing.T) {
+	jsonResponse := `{
+		"model": "claude-test-9",
+		"score": 85,
+		"summary": "s",
+		"risk_summary": {"concerns": [], "positives": []},
+		"action_items": {"critical": [], "important": [], "followup": []},
+		"technical_details": {"code": [], "infrastructure": [], "dependencies": []},
+		"documentation_quality": "ok",
+		"documentation_recommendations": "none"
+	}`
+
+	config := &ReportConfig{
+		LLMResponse:             jsonResponse,
+		Metadata:                &ReportMetadata{ModelID: "flag-model", GenerationTime: time.Now()},
+		AutoDeployThreshold:     80,
+		ReviewRequiredThreshold: 60,
+	}
+
+	_, report, err := GenerateReport(config)
+	if err != nil {
+		t.Fatalf("GenerateReport() error = %v", err)
+	}
+	if !strings.Contains(report, "claude-test-9") {
+		t.Error("report footer should use the model stated in the analysis")
+	}
+	if strings.Contains(report, "flag-model") {
+		t.Error("report footer should not use the --model-id fallback when the analysis states a model")
+	}
+}
+
 func TestGenerateReportWithFeedbackURL(t *testing.T) {
 	jsonResponse := `{
 		"score": 85,
