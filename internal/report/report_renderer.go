@@ -112,15 +112,28 @@ func docFileInfo(filename, repoURL, branch, platform, content string) string {
 	return fmt.Sprintf("- %s - %d chars", url, len(content))
 }
 
-// StripMarkdownCodeBlocks removes markdown code block markers from analysis
-// output. Exported so validation and rendering strip identically.
-// Handles both ```json and ``` style code blocks
+// StripMarkdownCodeBlocks extracts the JSON payload from analysis output.
+// Exported so validation and rendering strip identically.
+//
+// Models reliably wrap JSON in markdown fences and, despite instructions,
+// sometimes prefix a line of prose before the fence (observed repeatedly in
+// live runs - instruction-following is probabilistic; this parser is the
+// deterministic guarantee). Leading prose is tolerated ONLY when a fence
+// appears before the first '{', so a fence inside a JSON string can never
+// be mistaken for the opening marker. The JSON itself stays strictly
+// validated by the caller.
 func StripMarkdownCodeBlocks(content string) string {
 	trimmed := strings.TrimSpace(content)
 
-	// Return as-is if not wrapped in code blocks
 	if !strings.HasPrefix(trimmed, "```") {
-		return trimmed
+		fence := strings.Index(trimmed, "\n```")
+		brace := strings.Index(trimmed, "{")
+		if fence == -1 || (brace != -1 && brace < fence) {
+			// No leading fence before the JSON starts: return as-is.
+			return trimmed
+		}
+		// Drop the prose preamble; continue with the fence at line start.
+		trimmed = trimmed[fence+1:]
 	}
 
 	// Remove opening marker (```json or ``` followed by newline)
@@ -128,8 +141,13 @@ func StripMarkdownCodeBlocks(content string) string {
 		trimmed = trimmed[idx+1:]
 	}
 
-	// Remove closing marker
-	trimmed = strings.TrimSuffix(trimmed, "```")
+	// Remove the closing marker and anything after it (trailing prose after
+	// the closing fence is discarded along with it).
+	if idx := strings.LastIndex(trimmed, "\n```"); idx != -1 {
+		trimmed = trimmed[:idx]
+	} else {
+		trimmed = strings.TrimSuffix(trimmed, "```")
+	}
 
 	return strings.TrimSpace(trimmed)
 }

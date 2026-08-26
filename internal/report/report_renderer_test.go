@@ -796,3 +796,27 @@ func TestGenerateReportWithoutFeedbackURL(t *testing.T) {
 		t.Error("GenerateReport() report should not contain feedback link when FeedbackURL is empty")
 	}
 }
+
+func TestStripMarkdownCodeBlocksProseTolerance(t *testing.T) {
+	fence := "\x60\x60\x60"
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{"plain JSON untouched", "{\"a\": 1}", "{\"a\": 1}"},
+		{"fenced", fence + "json\n{\"a\": 1}\n" + fence, "{\"a\": 1}"},
+		{"leading prose before fence", "All patches reviewed.\n\n" + fence + "json\n{\"a\": 1}\n" + fence, "{\"a\": 1}"},
+		{"leading and trailing prose", "Done.\n" + fence + "json\n{\"a\": 1}\n" + fence + "\nHope this helps!", "{\"a\": 1}"},
+		{"fence inside JSON string not mistaken for opening", "{\"desc\": \"use \n" + fence + " fences\"}", "{\"desc\": \"use \n" + fence + " fences\"}"},
+		{"prose without any fence untouched", "not json at all", "not json at all"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := StripMarkdownCodeBlocks(tt.content); got != tt.want {
+				t.Errorf("StripMarkdownCodeBlocks(%q) = %q, want %q", tt.content, got, tt.want)
+			}
+		})
+	}
+}
