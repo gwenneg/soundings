@@ -37,7 +37,8 @@ func fetchUserGuidance(ctx context.Context, client *github.Client, owner, repo s
 		// Get PR object (uses cache populated during diff enrichment)
 		pr, err := cache.getOrFetchPR(ctx, client, owner, repo, int(commit.PRNumber))
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch PR #%d for guidance extraction: %w", commit.PRNumber, err)
+			slog.Warn("Skipping guidance for unavailable PR", "pr", commit.PRNumber, "error", err)
+			continue
 		}
 
 		if pr == nil {
