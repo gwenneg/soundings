@@ -154,9 +154,9 @@ executable command or verifiable check with success criteria.
 
 Respond with EXACTLY this JSON structure and nothing else (severities
 lowercase: `critical`, `high`, `medium`, `low`). The `model` field is
-REQUIRED — state your own exact model identifier; validation rejects the
-analysis without it, and the report footer credits the model that performed
-the analysis:
+REQUIRED — state your own exact model identifier; the render step rejects
+an analysis without it and returns it to you for correction, and the report
+footer credits the model that performed the analysis:
 
 ```json
 {

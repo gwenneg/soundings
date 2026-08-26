@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "helper": {
+      "command": "go",
+      "args": ["-C", "${CLAUDE_PLUGIN_ROOT}", "run", ".", "mcp"]
+    }
+  }
+}

@@ -40,6 +40,9 @@ import (
 	"github.com/gwenneg/soundings/internal/risk"
 )
 
+// pluginVersion mirrors .claude-plugin/plugin.json; bump both together.
+const pluginVersion = "0.2.0"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -52,6 +55,12 @@ func main() {
 		err = runFetch(os.Args[2:])
 	case "render":
 		err = runRender(os.Args[2:])
+	case "mcp":
+		err = runMCP()
+		// stdin closing is the normal way a stdio MCP session ends
+		if err != nil && strings.Contains(err.Error(), "EOF") {
+			err = nil
+		}
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -69,6 +78,7 @@ func usage() {
 
 USAGE:
   soundings fetch --out <dir> <compare-url> [<compare-url>...]
+  soundings mcp    (serve fetch/render as MCP tools over stdio)
   soundings render --analysis <file> --data <dir> [--auto-deploy 80] [--review-required 60]
                    [--feedback-url <url>] [--app-interface-mode] [--extra-guidance <file>]
                    [-o <file>]
@@ -155,25 +165,72 @@ func runFetch(args []string) error {
 		urls[i] = stripQueryFragment(u)
 	}
 	urls = dedupe(urls)
-	if len(urls) == 0 {
-		return fmt.Errorf("no compare URLs provided")
-	}
 	if *outDir == "" {
 		return fmt.Errorf("--out <dir> is required")
 	}
-	// Absolute paths in index.json so render works from any directory.
-	absOut, err := filepath.Abs(*outDir)
+
+	summary, err := doFetch(urls, *outDir)
 	if err != nil {
 		return err
 	}
-	*outDir = absOut
-	if err := os.MkdirAll(*outDir, 0o755); err != nil {
-		return err
+
+	totalFiles := 0
+	for _, r := range summary.Repos {
+		totalFiles += r.Files
+	}
+	fmt.Printf("Index written to %s (%d repo(s), %d changed file(s), %d guidance item(s), %d doc source(s))\n",
+		summary.IndexPath, len(summary.Repos), totalFiles, summary.GuidanceCount, len(summary.Docs))
+	return nil
+}
+
+// FetchSummary is what fetch returns to its caller: counts and paths only,
+// never fetched content - the untrusted material stays on disk for the
+// read-only assessment stage.
+type FetchSummary struct {
+	IndexPath     string        `json:"index_path" jsonschema:"path to the index.json describing the fetched data"`
+	Repos         []RepoSummary `json:"repos"`
+	GuidanceCount int           `json:"guidance_count" jsonschema:"number of authorized-or-not guidance entries collected"`
+	Docs          []DocSummary  `json:"docs,omitempty"`
+}
+
+type RepoSummary struct {
+	Platform            string `json:"platform"`
+	RepoURL             string `json:"repo_url"`
+	DiffURL             string `json:"diff_url"`
+	Commits             int    `json:"commits"`
+	Files               int    `json:"files"`
+	FilesMayBeTruncated bool   `json:"files_may_be_truncated,omitempty" jsonschema:"true when the platform API capped the file list - the diff is partial"`
+}
+
+type DocSummary struct {
+	RepoURL    string `json:"repo_url"`
+	Found      bool   `json:"found"`
+	FetchError string `json:"fetch_error,omitempty" jsonschema:"set when documentation was unavailable (auth/network), as opposed to absent"`
+}
+
+// doFetch is the core of the fetch operation, shared by the CLI and the MCP
+// server.
+func doFetch(urls []string, outDir string) (*FetchSummary, error) {
+	for i, u := range urls {
+		urls[i] = stripQueryFragment(u)
+	}
+	urls = dedupe(urls)
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("no compare URLs provided")
+	}
+	// Absolute paths in index.json so render works from any directory.
+	absOut, err := filepath.Abs(outDir)
+	if err != nil {
+		return nil, err
+	}
+	outDir = absOut
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return nil, err
 	}
 
 	providers, err := buildProviders(urls)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Fetch all URLs in parallel (mirrors the original ReleaseAnalyzer).
@@ -207,7 +264,7 @@ func runFetch(args []string) error {
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return err
+		return nil, err
 	}
 
 	index := Index{CompareURLs: urls, Guidance: guidance}
@@ -220,9 +277,9 @@ func runFetch(args []string) error {
 		// Key the patch directory by the full compare URL, not just the
 		// repo: two ranges of the same repo in one run must not overwrite
 		// each other's patch files.
-		patchDir := filepath.Join(*outDir, "patches", slug(c.DiffURL))
+		patchDir := filepath.Join(outDir, "patches", slug(c.DiffURL))
 		if err := os.MkdirAll(patchDir, 0o755); err != nil {
-			return err
+			return nil, err
 		}
 		ri := RepoIndex{Platform: c.Platform, RepoURL: c.RepoURL, DiffURL: c.DiffURL, Stats: c.Stats, Commits: c.Commits, FilesMayBeTruncated: c.FilesMayBeTruncated}
 		for i, f := range c.Files {
@@ -239,7 +296,7 @@ func runFetch(args []string) error {
 			if f.Patch != "" {
 				p := filepath.Join(patchDir, fmt.Sprintf("%03d-%s.patch", i, slug(f.Filename)))
 				if err := os.WriteFile(p, []byte(f.Patch), 0o644); err != nil {
-					return err
+					return nil, err
 				}
 				fi.PatchFile = p
 			}
@@ -250,15 +307,15 @@ func runFetch(args []string) error {
 
 	// Write documentation contents and index entries.
 	for _, d := range docs {
-		docDir := filepath.Join(*outDir, "docs", slug(d.Repository.URL))
+		docDir := filepath.Join(outDir, "docs", slug(d.Repository.URL))
 		if err := os.MkdirAll(docDir, 0o755); err != nil {
-			return err
+			return nil, err
 		}
 		mainPath := ""
 		if d.MainDocFile != "" {
 			mainPath = filepath.Join(docDir, "main-"+slug(d.MainDocFile)+".md")
 			if err := os.WriteFile(mainPath, []byte(d.MainDocContent), 0o644); err != nil {
-				return err
+				return nil, err
 			}
 		}
 		di := DocIndex{
@@ -277,29 +334,41 @@ func runFetch(args []string) error {
 			}
 			p := filepath.Join(docDir, "additional-"+slug(name)+".md")
 			if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-				return err
+				return nil, err
 			}
 			di.AdditionalDocs = append(di.AdditionalDocs, DocEntry{Name: name, Path: p})
 		}
 		index.Docs = append(index.Docs, di)
 	}
 
-	indexPath := filepath.Join(*outDir, "index.json")
+	indexPath := filepath.Join(outDir, "index.json")
 	data, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := os.WriteFile(indexPath, data, 0o644); err != nil {
-		return err
+		return nil, err
 	}
 
-	totalFiles := 0
+	summary := &FetchSummary{IndexPath: indexPath, GuidanceCount: len(index.Guidance)}
 	for _, r := range index.Repos {
-		totalFiles += len(r.Files)
+		summary.Repos = append(summary.Repos, RepoSummary{
+			Platform:            r.Platform,
+			RepoURL:             r.RepoURL,
+			DiffURL:             r.DiffURL,
+			Commits:             len(r.Commits),
+			Files:               len(r.Files),
+			FilesMayBeTruncated: r.FilesMayBeTruncated,
+		})
 	}
-	fmt.Printf("Index written to %s (%d repo(s), %d changed file(s), %d guidance item(s), %d doc source(s))\n",
-		indexPath, len(index.Repos), totalFiles, len(index.Guidance), len(index.Docs))
-	return nil
+	for _, d := range index.Docs {
+		summary.Docs = append(summary.Docs, DocSummary{
+			RepoURL:    d.RepoURL,
+			Found:      d.MainDocFile != "",
+			FetchError: d.FetchError,
+		})
+	}
+	return summary, nil
 }
 
 // buildProviders resolves auth and constructs one GitProvider per platform/host
@@ -466,71 +535,121 @@ func runRender(args []string) error {
 	if *analysisPath == "" || *dataDir == "" {
 		return fmt.Errorf("--analysis and --data are required")
 	}
-	if *autoDeploy < 0 || *autoDeploy > 100 || *reviewRequired < 0 || *reviewRequired > 100 {
-		return fmt.Errorf("--auto-deploy and --review-required must be between 0 and 100")
-	}
-	if *autoDeploy < *reviewRequired {
-		return fmt.Errorf("--auto-deploy (%d) must be >= --review-required (%d)", *autoDeploy, *reviewRequired)
-	}
 
 	analysisRaw, err := os.ReadFile(*analysisPath)
 	if err != nil {
 		return err
 	}
-	// Strip markdown fences once; validation and rendering must see the
-	// exact same bytes so they cannot disagree.
-	analysisJSON := report.StripMarkdownCodeBlocks(string(analysisRaw))
-	if errs := validateAnalysis([]byte(analysisJSON)); len(errs) > 0 {
-		fmt.Fprintln(os.Stderr, "analysis JSON failed validation; fix these fields and re-run:")
-		for _, e := range errs {
-			fmt.Fprintf(os.Stderr, "  - %s\n", e)
+
+	var fileGuidance []extraGuidanceEntry
+	if *extraGuidance != "" {
+		data, err := os.ReadFile(*extraGuidance)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("%d validation error(s)", len(errs))
+		if err := json.Unmarshal(data, &fileGuidance); err != nil {
+			return fmt.Errorf("parsing extra guidance: %w (expected a JSON array of {content, author, date, comment_url})", err)
+		}
 	}
 
-	indexData, err := os.ReadFile(filepath.Join(*dataDir, "index.json"))
+	result, validationErrs, err := doRender(string(analysisRaw), *dataDir, renderOpts{
+		AutoDeploy:       *autoDeploy,
+		ReviewRequired:   *reviewRequired,
+		FeedbackURL:      *feedbackURL,
+		AppInterfaceMode: *appInterfaceMode,
+		ExtraGuidance:    fileGuidance,
+	})
 	if err != nil {
-		return fmt.Errorf("reading fetch index: %w", err)
+		return err
+	}
+	if len(validationErrs) > 0 {
+		fmt.Fprintln(os.Stderr, "analysis JSON failed validation; fix these fields and re-run:")
+		for _, e := range validationErrs {
+			fmt.Fprintf(os.Stderr, "  - %s\n", e)
+		}
+		return fmt.Errorf("%d validation error(s)", len(validationErrs))
+	}
+
+	if *outFile != "" {
+		return os.WriteFile(*outFile, []byte(result.ReportMarkdown), 0o644)
+	}
+	fmt.Print(result.ReportMarkdown)
+	return nil
+}
+
+// renderOpts carries the caller-supplied rendering parameters.
+type renderOpts struct {
+	AutoDeploy       int
+	ReviewRequired   int
+	FeedbackURL      string
+	AppInterfaceMode bool
+	ExtraGuidance    []extraGuidanceEntry
+}
+
+// RenderResult is the successful outcome of a render.
+type RenderResult struct {
+	Score          int    `json:"score"`
+	ReportMarkdown string `json:"report_markdown"`
+}
+
+// doRender is the core of the render operation, shared by the CLI and the
+// MCP server. It returns (nil, validationErrors, nil) when the analysis
+// fails schema validation - the caller relays the field-level errors so the
+// assessment can be corrected and re-run.
+func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []string, error) {
+	if opts.AutoDeploy < 0 || opts.AutoDeploy > 100 || opts.ReviewRequired < 0 || opts.ReviewRequired > 100 {
+		return nil, nil, fmt.Errorf("auto-deploy and review-required thresholds must be between 0 and 100")
+	}
+	if opts.AutoDeploy < opts.ReviewRequired {
+		return nil, nil, fmt.Errorf("auto-deploy (%d) must be >= review-required (%d)", opts.AutoDeploy, opts.ReviewRequired)
+	}
+
+	// Strip markdown fences once; validation and rendering must see the
+	// exact same bytes so they cannot disagree.
+	analysisJSON := report.StripMarkdownCodeBlocks(analysisRaw)
+	if errs := validateAnalysis([]byte(analysisJSON)); len(errs) > 0 {
+		return nil, errs, nil
+	}
+
+	indexData, err := os.ReadFile(filepath.Join(dataDir, "index.json"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading fetch index: %w", err)
 	}
 	var index Index
 	if err := json.Unmarshal(indexData, &index); err != nil {
-		return fmt.Errorf("parsing fetch index: %w", err)
+		return nil, nil, fmt.Errorf("parsing fetch index: %w", err)
 	}
 
 	comparisons, documentation, err := reconstruct(&index)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	guidance := index.Guidance
-	if *extraGuidance != "" {
-		extra, err := readExtraGuidance(*extraGuidance)
+	if len(opts.ExtraGuidance) > 0 {
+		extra, err := toUserGuidance(opts.ExtraGuidance)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		guidance = append(guidance, extra...)
 	}
 
-	_, out, err := report.GenerateReport(&report.ReportConfig{
+	score, out, err := report.GenerateReport(&report.ReportConfig{
 		LLMResponse:             analysisJSON,
 		Metadata:                &report.ReportMetadata{GenerationTime: time.Now().UTC()},
 		Comparisons:             comparisons,
 		Documentation:           documentation,
 		UserGuidance:            guidance,
-		AutoDeployThreshold:     *autoDeploy,
-		ReviewRequiredThreshold: *reviewRequired,
-		AppInterfaceMode:        *appInterfaceMode,
-		FeedbackURL:             *feedbackURL,
+		AutoDeployThreshold:     opts.AutoDeploy,
+		ReviewRequiredThreshold: opts.ReviewRequired,
+		AppInterfaceMode:        opts.AppInterfaceMode,
+		FeedbackURL:             opts.FeedbackURL,
 	})
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	if *outFile != "" {
-		return os.WriteFile(*outFile, []byte(out), 0o644)
-	}
-	fmt.Print(out)
-	return nil
+	return &RenderResult{Score: score, ReportMarkdown: out}, nil, nil
 }
 
 // reconstruct rebuilds the renderer's view (comparisons without patch bodies,
@@ -590,15 +709,9 @@ type extraGuidanceEntry struct {
 	CommentURL string `json:"comment_url"`
 }
 
-func readExtraGuidance(path string) ([]types.UserGuidance, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var entries []extraGuidanceEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("parsing extra guidance: %w (expected a JSON array of {content, author, date, comment_url})", err)
-	}
+// toUserGuidance converts caller-supplied guidance entries; all are treated
+// as pre-authorized (the caller vouches for them).
+func toUserGuidance(entries []extraGuidanceEntry) ([]types.UserGuidance, error) {
 	out := make([]types.UserGuidance, 0, len(entries))
 	for i, e := range entries {
 		if strings.TrimSpace(e.Content) == "" {

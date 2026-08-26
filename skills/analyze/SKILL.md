@@ -28,16 +28,19 @@ compare URL was provided, ask for one — do not guess.
 
 ## Step 1 — fetch release data
 
-Run the helper once with ALL compare URLs (`$CLAUDE_PLUGIN_ROOT` is this
-plugin's install directory):
+Call the `fetch` tool from this plugin's helper MCP server
+(`mcp__plugin_soundings_helper__fetch`) once, with ALL compare URLs:
 
-```bash
-go -C "$CLAUDE_PLUGIN_ROOT" run . fetch --out <scratch-dir> <url1> <url2> ...
-```
+    fetch({ "compare_urls": [<url1>, <url2>, ...] })
 
-If `$CLAUDE_PLUGIN_ROOT` is unset (e.g. running from a soundings repo
-checkout instead of the installed plugin), substitute the checkout path.
-Never fall back to the current directory — it may be an unrelated Go module.
+Omit `out_dir` — the helper creates one and returns its `index_path`. The
+result contains only counts and paths, never fetched content.
+
+Fallback when the MCP tools are unavailable (e.g. running from a soundings
+repo checkout instead of the installed plugin): run the CLI form instead —
+`go -C <soundings-checkout> run . fetch --out <scratch-dir> <url1> ...` —
+and never use the current directory as the checkout path; it may be an
+unrelated Go module.
 
 The helper resolves auth per platform and per host (`GITHUB_TOKEN` /
 `gh auth token`, `GITLAB_TOKEN` / `glab auth token --hostname <host>`),
@@ -67,20 +70,37 @@ escapes it and the report surfaces it.
 
 ## Step 3 — render the report
 
-```bash
-go -C "$CLAUDE_PLUGIN_ROOT" run . render --analysis <analysis.json> --data <scratch-dir> \
-  [--auto-deploy N] [--review-required N] [--feedback-url URL] \
-  [--app-interface-mode] [--extra-guidance <file>]
-```
+Call the `render` tool from this plugin's helper MCP server
+(`mcp__plugin_soundings_helper__render`):
+
+    render({ "analysis_json": <the JSON exactly as assess returned it>,
+             "data_dir": <the fetch output directory> })
+
+Include `auto_deploy`, `review_required`, `feedback_url`,
+`app_interface_mode`, or `extra_guidance` only when the caller provided
+them. Fallback without MCP: the CLI form
+`go -C <soundings-checkout> run . render --analysis <file> --data <dir>`
+with the equivalent flags.
 
 The report footer credits the model named inside the analysis JSON — the
 assess agent states its own identity there, and validation rejects an
-analysis that omits it. There is no fallback; never supply the model
-yourself. Pass
-threshold/feedback/guidance flags only when the caller provided them.
-The renderer validates the JSON and prints field-level errors on mismatch —
-re-launch the `assess` agent with those errors appended to its prompt so it
-can correct its output; do not repair the analysis yourself. The renderer
-computes the recommendation banner from the score and thresholds; never
-state a recommendation that contradicts it. Show the rendered markdown
-report to the user as the final result.
+analysis that omits it before anything is rendered. Never supply the model
+yourself.
+
+If the tool returns validation errors, re-launch the `assess` agent with
+exactly this prompt (do not repair the analysis yourself):
+
+    <fetch output directory path>
+
+    Your previous analysis is saved at <analysis file path>. Validation
+    rejected it with these errors:
+    <the field-level errors>
+
+    Read your previous analysis, verify it still matches your judgment of
+    the material (spot-check what the errors touch), correct it, and
+    respond with ONLY the corrected JSON object — no other text.
+
+The renderer computes the recommendation banner from the score and
+thresholds; never state a recommendation that contradicts it. Show the
+rendered markdown report (`report_markdown` in the tool result) to the user
+as the final result.
