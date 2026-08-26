@@ -17,6 +17,15 @@ helper (invoked via `go run`, no installation) handles the deterministic work:
 fetching diffs and commit/PR metadata, extracting authorized reviewer guidance,
 risk-tiering changed files, and rendering the final report.
 
+## Helper MCP server
+
+The plugin bundles its Go helper as an MCP server exposing two tools,
+`fetch` and `render`, started automatically per session. It is inert at
+rest: no credentials are read and no network is touched until a tool is
+called, and it can be toggled off in the `/mcp` panel. For containerized
+headless use, build the binary into the image and point the MCP server
+config at it instead of `go run`.
+
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
