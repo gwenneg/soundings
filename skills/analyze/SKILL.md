@@ -7,6 +7,7 @@ description: >-
   or diff range for deployment confidence, or asks "is this safe to ship?".
   Accepts multiple compare URLs in one invocation and analyzes them
   together to detect compound risks across repositories.
+allowed-tools: mcp__plugin_soundings_helper__fetch, mcp__plugin_soundings_helper__render
 ---
 
 # Soundings: release confidence analysis
