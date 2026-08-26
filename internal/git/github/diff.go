@@ -106,9 +106,13 @@ func getPRForCommit(ctx context.Context, client *github.Client, owner, repo, com
 
 	slog.Debug("GitHub API response", "commit", shortSHA(commitSHA), "found_prs", len(prs), "rate_limit_remaining", resp.Rate.Remaining)
 
-	// Find first merged PR
+	// Find the first merged PR that belongs to the analyzed repository.
+	// ListPullRequestsWithCommit returns PRs from the whole fork network, so
+	// a commit in a fork carries the upstream repo's PR numbers - those must
+	// not be resolved against this repo (wrong links, 404s on lookup).
+	fullName := owner + "/" + repo
 	for _, pr := range prs {
-		if !pr.GetMergedAt().IsZero() {
+		if !pr.GetMergedAt().IsZero() && strings.EqualFold(pr.GetBase().GetRepo().GetFullName(), fullName) {
 			return pr.GetNumber(), nil
 		}
 	}

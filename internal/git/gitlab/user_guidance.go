@@ -37,7 +37,8 @@ func fetchUserGuidance(ctx context.Context, client *gitlab.Client, projectPath s
 		// Get MR object (uses cache populated during diff enrichment)
 		mr, err := cache.getOrFetchMR(ctx, client, projectPath, commit.PRNumber)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch MR !%d for guidance extraction: %w", commit.PRNumber, err)
+			slog.Warn("Skipping guidance for unavailable MR", "mr", commit.PRNumber, "error", err)
+			continue
 		}
 
 		if mr == nil {
