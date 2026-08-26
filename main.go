@@ -37,7 +37,7 @@ import (
 )
 
 // pluginVersion mirrors .claude-plugin/plugin.json; bump both together.
-const pluginVersion = "0.2.0"
+const pluginVersion = "0.2.1"
 
 func main() {
 	if len(os.Args) > 1 {
