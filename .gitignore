@@ -1,0 +1,12 @@
+# binaries
+/soundings
+*.exe
+
+# analysis outputs and scratch
+report.md
+analysis*.json
+soundings-out/
+
+# tooling
+.DS_Store
+coverage.out
