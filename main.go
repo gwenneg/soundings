@@ -1,18 +1,15 @@
-// Command soundings is the helper CLI behind the soundings Claude Code skill.
+// Command soundings is the MCP server behind the soundings Claude Code
+// plugin. It exposes two tools over stdio:
 //
-// Subcommands:
+//	fetch   Fetches commits, diffs, PR/MR metadata, authorized guidance, and
+//	        repository documentation for one or more GitHub/GitLab compare
+//	        URLs. Writes per-file patches and docs to disk and returns a
+//	        summary of counts and paths; the read-only assessment stage
+//	        opens the content selectively.
 //
-//	fetch  --out <dir> <compare-url> [<compare-url>...]
-//	       Fetches commits, diffs, PR/MR metadata, authorized guidance, and
-//	       repository documentation for one or more GitHub/GitLab
-//	       compare URLs. Writes per-file patches and docs under <dir> and an
-//	       index.json describing everything; the agent reads the index first
-//	       and opens patch files selectively.
-//
-//	render --analysis <file> --data <dir> [flags]
-//	       Validates the agent's structured analysis JSON (field-level errors
-//	       on mismatch) and renders the final markdown report, computing the
-//	       recommendation banner from the score and thresholds.
+//	render  Validates the structured analysis JSON (field-level errors on
+//	        mismatch) and renders the final markdown report, computing the
+//	        recommendation banner from the score and thresholds.
 package main
 
 import (
@@ -20,7 +17,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -44,58 +40,21 @@ import (
 const pluginVersion = "0.2.0"
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
+	if len(os.Args) > 1 {
+		fmt.Fprintf(os.Stderr, "soundings %s is an MCP server; run it with no arguments (stdio transport)\n", pluginVersion)
 		os.Exit(2)
 	}
-
-	var err error
-	switch os.Args[1] {
-	case "fetch":
-		err = runFetch(os.Args[2:])
-	case "render":
-		err = runRender(os.Args[2:])
-	case "mcp":
-		err = runMCP()
-		// stdin closing is the normal way a stdio MCP session ends
-		if err != nil && strings.Contains(err.Error(), "EOF") {
-			err = nil
-		}
-	case "-h", "--help", "help":
-		usage()
-	default:
-		usage()
-		os.Exit(2)
+	err := runMCP()
+	// stdin closing is the normal way a stdio MCP session ends
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		err = nil
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "soundings %s: %v\n", os.Args[1], err)
+		fmt.Fprintf(os.Stderr, "soundings: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func usage() {
-	fmt.Fprint(os.Stderr, `soundings - release confidence helper
-
-USAGE:
-  soundings fetch --out <dir> <compare-url> [<compare-url>...]
-  soundings mcp    (serve fetch/render as MCP tools over stdio)
-  soundings render --analysis <file> --data <dir> [--auto-deploy 80] [--review-required 60]
-                   [--feedback-url <url>] [--app-interface-mode] [--extra-guidance <file>]
-                   [-o <file>]
-
-AUTH:
-  GitHub: GITHUB_TOKEN, or 'gh auth login'
-  GitLab: GITLAB_TOKEN, or 'glab auth login' (per host, derived from the compare URL)
-`)
-}
-
-// ---------------------------------------------------------------------------
-// fetch
-// ---------------------------------------------------------------------------
-
-// Index is the agent-facing summary written to <out>/index.json.
-// Patch bodies and doc contents live in separate files so the agent can
-// decide what to read in full versus skim.
 type Index struct {
 	CompareURLs []string             `json:"compare_urls"`
 	Repos       []RepoIndex          `json:"repos"`
@@ -147,45 +106,6 @@ type DocEntry struct {
 	Path string `json:"path"`
 }
 
-func runFetch(args []string) error {
-	fs := flag.NewFlagSet("fetch", flag.ExitOnError)
-	outDir := fs.String("out", "", "output directory for index.json, patches/ and docs/ (required)")
-	compareURLsFlag := fs.String("compare-urls", "", "comma-separated compare URLs (may also be passed as positional args)")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	urls := fs.Args()
-	if *compareURLsFlag != "" {
-		for _, u := range strings.Split(*compareURLsFlag, ",") {
-			urls = append(urls, strings.TrimSpace(u))
-		}
-	}
-	for i, u := range urls {
-		urls[i] = stripQueryFragment(u)
-	}
-	urls = dedupe(urls)
-	if *outDir == "" {
-		return fmt.Errorf("--out <dir> is required")
-	}
-
-	summary, err := doFetch(urls, *outDir)
-	if err != nil {
-		return err
-	}
-
-	totalFiles := 0
-	for _, r := range summary.Repos {
-		totalFiles += r.Files
-	}
-	fmt.Printf("Index written to %s (%d repo(s), %d changed file(s), %d guidance item(s), %d doc source(s))\n",
-		summary.IndexPath, len(summary.Repos), totalFiles, summary.GuidanceCount, len(summary.Docs))
-	return nil
-}
-
-// FetchSummary is what fetch returns to its caller: counts and paths only,
-// never fetched content - the untrusted material stays on disk for the
-// read-only assessment stage.
 type FetchSummary struct {
 	IndexPath     string        `json:"index_path" jsonschema:"path to the index.json describing the fetched data"`
 	Repos         []RepoSummary `json:"repos"`
@@ -519,65 +439,6 @@ func countLines(s string) int {
 // render
 // ---------------------------------------------------------------------------
 
-func runRender(args []string) error {
-	fs := flag.NewFlagSet("render", flag.ExitOnError)
-	analysisPath := fs.String("analysis", "", "path to the structured analysis JSON produced by the agent (required)")
-	dataDir := fs.String("data", "", "the fetch output directory containing index.json (required)")
-	autoDeploy := fs.Int("auto-deploy", 80, "score at or above which release is recommended")
-	reviewRequired := fs.Int("review-required", 60, "score at or above which manual review (instead of no-go) is recommended")
-	feedbackURL := fs.String("feedback-url", "", "optional feedback URL embedded in the report")
-	appInterfaceMode := fs.Bool("app-interface-mode", false, "enable app-interface report conventions (override-justification banner)")
-	extraGuidance := fs.String("extra-guidance", "", "optional JSON file with additional pre-authorized guidance entries")
-	outFile := fs.String("o", "", "write report to file instead of stdout")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if *analysisPath == "" || *dataDir == "" {
-		return fmt.Errorf("--analysis and --data are required")
-	}
-
-	analysisRaw, err := os.ReadFile(*analysisPath)
-	if err != nil {
-		return err
-	}
-
-	var fileGuidance []extraGuidanceEntry
-	if *extraGuidance != "" {
-		data, err := os.ReadFile(*extraGuidance)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(data, &fileGuidance); err != nil {
-			return fmt.Errorf("parsing extra guidance: %w (expected a JSON array of {content, author, date, comment_url})", err)
-		}
-	}
-
-	result, validationErrs, err := doRender(string(analysisRaw), *dataDir, renderOpts{
-		AutoDeploy:       *autoDeploy,
-		ReviewRequired:   *reviewRequired,
-		FeedbackURL:      *feedbackURL,
-		AppInterfaceMode: *appInterfaceMode,
-		ExtraGuidance:    fileGuidance,
-	})
-	if err != nil {
-		return err
-	}
-	if len(validationErrs) > 0 {
-		fmt.Fprintln(os.Stderr, "analysis JSON failed validation; fix these fields and re-run:")
-		for _, e := range validationErrs {
-			fmt.Fprintf(os.Stderr, "  - %s\n", e)
-		}
-		return fmt.Errorf("%d validation error(s)", len(validationErrs))
-	}
-
-	if *outFile != "" {
-		return os.WriteFile(*outFile, []byte(result.ReportMarkdown), 0o644)
-	}
-	fmt.Print(result.ReportMarkdown)
-	return nil
-}
-
-// renderOpts carries the caller-supplied rendering parameters.
 type renderOpts struct {
 	AutoDeploy       int
 	ReviewRequired   int

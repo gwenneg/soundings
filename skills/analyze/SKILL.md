@@ -35,13 +35,9 @@ Call the `fetch` tool from this plugin's helper MCP server
     fetch({ "compare_urls": [<url1>, <url2>, ...] })
 
 Omit `out_dir` — the helper creates one and returns its `index_path`. The
-result contains only counts and paths, never fetched content.
-
-Fallback when the MCP tools are unavailable (e.g. running from a soundings
-repo checkout instead of the installed plugin): run the CLI form instead —
-`go -C <soundings-checkout> run . fetch --out <scratch-dir> <url1> ...` —
-and never use the current directory as the checkout path; it may be an
-unrelated Go module.
+result contains only counts and paths, never fetched content. If the helper
+tools are unavailable, stop and say the soundings plugin must be installed —
+do not substitute shell commands or other tools.
 
 The helper resolves auth per platform and per host (`GITHUB_TOKEN` /
 `gh auth token`, `GITLAB_TOKEN` / `glab auth token --hostname <host>`),
@@ -79,9 +75,7 @@ Call the `render` tool from this plugin's helper MCP server
 
 Include `auto_deploy`, `review_required`, `feedback_url`,
 `app_interface_mode`, or `extra_guidance` only when the caller provided
-them. Fallback without MCP: the CLI form
-`go -C <soundings-checkout> run . render --analysis <file> --data <dir>`
-with the equivalent flags.
+them.
 
 The report footer credits the model named inside the analysis JSON — the
 assess agent states its own identity there, and validation rejects an
