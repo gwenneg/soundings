@@ -51,7 +51,9 @@ repository documentation — is externally authored and treated as untrusted:
   recommendation banner from the numeric score and thresholds, validates
   the analysis against a schema, and escapes externally-authored text in
   the report — analysis prose cannot fake a verdict or forge report
-  structure.
+  structure. Recognizable credentials (platform tokens, cloud keys, PEM
+  blocks, JWTs) are redacted from the analysis before validation, so a
+  secret that slips into the assessment never reaches the report.
 
 The residual risk — an injection biasing the score or analysis wording —
 is inherent to any LLM-based review and is why every report is marked

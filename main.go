@@ -465,9 +465,12 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		return nil, nil, fmt.Errorf("auto-deploy (%d) must be >= review-required (%d)", opts.AutoDeploy, opts.ReviewRequired)
 	}
 
-	// Strip markdown fences once; validation and rendering must see the
-	// exact same bytes so they cannot disagree.
+	// Strip fences and redact credentials once, before validation:
+	// validation and rendering must see the exact same bytes so they
+	// cannot disagree, and a secret must never survive into the report
+	// even if redaction damages the JSON (that fails validation instead).
 	analysisJSON := report.StripMarkdownCodeBlocks(analysisRaw)
+	analysisJSON, _ = report.RedactSecrets(analysisJSON)
 	if errs := validateAnalysis([]byte(analysisJSON)); len(errs) > 0 {
 		return nil, errs, nil
 	}
