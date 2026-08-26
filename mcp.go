@@ -48,7 +48,7 @@ func runMCP() error {
 
 type fetchToolInput struct {
 	CompareURLs []string `json:"compare_urls" jsonschema:"GitHub/GitLab compare URLs to analyze together; mixed platforms and hosts allowed"`
-	OutDir      string   `json:"out_dir,omitempty" jsonschema:"directory for index.json, patches/ and docs/; a temporary directory is created when omitted"`
+	OutDir      string   `json:"out_dir,omitempty" jsonschema:"directory for index.json, patches/ and docs/; a temporary directory is created when omitted. A custom directory must keep a path component starting with soundings- or the read-confinement hook will deny the assessment stage's reads"`
 }
 
 func fetchTool(ctx context.Context, req *mcp.CallToolRequest, in fetchToolInput) (*mcp.CallToolResult, *FetchSummary, error) {

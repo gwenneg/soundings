@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "go -C ${CLAUDE_PLUGIN_ROOT} run . hook"
+          }
+        ]
+      }
+    ]
+  }
+}

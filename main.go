@@ -10,6 +10,10 @@
 //	render  Validates the structured analysis JSON (field-level errors on
 //	        mismatch) and renders the final markdown report, computing the
 //	        recommendation banner from the score and thresholds.
+//
+// With the single argument "hook" it instead runs as a Claude Code
+// PreToolUse hook that confines the assess agent's Read tool to the fetch
+// output directory (see hook.go).
 package main
 
 import (
@@ -40,8 +44,17 @@ import (
 const pluginVersion = "0.2.1"
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "hook" {
+		if err := runHook(os.Stdin, os.Stdout); err != nil {
+			// Exit 1 is a non-blocking hook error: surfaced, but it does
+			// not silently allow or deny the tool call.
+			fmt.Fprintf(os.Stderr, "soundings hook: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 {
-		fmt.Fprintf(os.Stderr, "soundings %s is an MCP server; run it with no arguments (stdio transport)\n", pluginVersion)
+		fmt.Fprintf(os.Stderr, "soundings %s is an MCP server; run it with no arguments (stdio transport), or with 'hook' as the PreToolUse confinement hook\n", pluginVersion)
 		os.Exit(2)
 	}
 	err := runMCP()

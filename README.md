@@ -53,6 +53,48 @@ repository documentation — is externally authored and treated as untrusted:
   the report — analysis prose cannot fake a verdict or forge report
   structure.
 
+- **Reads are confined, not just read-only.** The plugin bundles a
+  PreToolUse hook (`go run . hook`) that denies any Read by the assess
+  agent outside the fetched data directory, so injected content cannot
+  steer it into reading secrets elsewhere on disk (`~/.ssh`, `.env`
+  files) and leaking them into the analysis. Whether plugin-bundled
+  hooks fire inside subagents is not yet documented behavior; to make
+  the confinement unconditional, register the same hook in your own
+  settings:
+
+  ```json
+  {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "Read",
+          "hooks": [
+            { "type": "command",
+              "command": "go -C <path-to-soundings> run . hook" }
+          ]
+        }
+      ]
+    }
+  }
+  ```
+
+As a coarse second net independent of soundings, harness-enforced deny
+rules in `settings.json` keep high-value secret paths unreadable for the
+whole session, subagents included — deny rules always beat allow rules:
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)"
+    ]
+  }
+}
+```
+
 The residual risk — an injection biasing the score or analysis wording —
 is inherent to any LLM-based review and is why every report is marked
 advisory.
