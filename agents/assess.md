@@ -153,10 +153,14 @@ executable command or verifiable check with success criteria.
 ## Output
 
 Respond with EXACTLY this JSON structure and nothing else (severities
-lowercase: `critical`, `high`, `medium`, `low`):
+lowercase: `critical`, `high`, `medium`, `low`). The `model` field is
+REQUIRED — state your own exact model identifier; validation rejects the
+analysis without it, and the report footer credits the model that performed
+the analysis:
 
 ```json
 {
+  "model": "<the exact model identifier you are running as, e.g. claude-sonnet-5>",
   "score": 75,
   "summary": "One-line summary of the release and its primary risk",
   "risk_summary": {

@@ -69,14 +69,14 @@ escapes it and the report surfaces it.
 
 ```bash
 go -C "$CLAUDE_PLUGIN_ROOT" run . render --analysis <analysis.json> --data <scratch-dir> \
-  --model-id <your-model-id> \
   [--auto-deploy N] [--review-required N] [--feedback-url URL] \
   [--app-interface-mode] [--extra-guidance <file>]
 ```
 
-Always pass `--model-id` with the exact identifier of the model you are
-running as (e.g. `claude-sonnet-5`) — the assess agent runs the same model,
-and the report footer records which model produced the analysis. Pass
+The report footer credits the model named inside the analysis JSON — the
+assess agent states its own identity there, and validation rejects an
+analysis that omits it. There is no fallback; never supply the model
+yourself. Pass
 threshold/feedback/guidance flags only when the caller provided them.
 The renderer validates the JSON and prints field-level errors on mismatch —
 re-launch the `assess` agent with those errors appended to its prompt so it
