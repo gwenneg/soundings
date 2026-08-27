@@ -75,8 +75,6 @@ type renderToolInput struct {
 	DataDir          string               `json:"data_dir" jsonschema:"the fetch output directory containing index.json"`
 	AutoDeploy       *int                 `json:"auto_deploy,omitempty" jsonschema:"score at or above which release is recommended (default 80)"`
 	ReviewRequired   *int                 `json:"review_required,omitempty" jsonschema:"score at or above which manual review (instead of no-go) is recommended (default 60)"`
-	FeedbackURL      string               `json:"feedback_url,omitempty" jsonschema:"optional feedback URL embedded in the report"`
-	AppInterfaceMode bool                 `json:"app_interface_mode,omitempty" jsonschema:"enable app-interface report conventions (override-justification banner)"`
 	ExtraGuidance    []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
 }
 
@@ -85,11 +83,9 @@ func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInpu
 		return nil, nil, errors.New("analysis_json and data_dir are required")
 	}
 	opts := renderOpts{
-		AutoDeploy:       80,
-		ReviewRequired:   60,
-		FeedbackURL:      in.FeedbackURL,
-		AppInterfaceMode: in.AppInterfaceMode,
-		ExtraGuidance:    in.ExtraGuidance,
+		AutoDeploy:     80,
+		ReviewRequired: 60,
+		ExtraGuidance:  in.ExtraGuidance,
 	}
 	if in.AutoDeploy != nil {
 		opts.AutoDeploy = *in.AutoDeploy

@@ -25,11 +25,11 @@ orchestrating a run cannot be steered into running commands.
 
 Input, from `$ARGUMENTS` or the caller: one or more GitHub/GitLab compare
 URLs (mixed platforms and mixed GitLab hosts allowed). Callers may also
-pass: score thresholds (defaults: auto-deploy 80, review-required 60), a
-feedback URL, pre-authorized guidance entries (a JSON array of objects with
-`content`, `author`, `date`, and `comment_url` fields, passed to the
-renderer via `--extra-guidance`), and caller notes for the assessment. If no
-compare URL was provided, ask for one — do not guess.
+pass: score thresholds (defaults: auto-deploy 80, review-required 60),
+pre-authorized guidance entries (a JSON array of objects with `content`,
+`author`, `date`, and `comment_url` fields, passed to the renderer via
+`--extra-guidance`), and caller notes for the assessment. If no compare
+URL was provided, ask for one — do not guess.
 
 ## Step 1 — fetch release data
 
@@ -77,9 +77,8 @@ Call the `render` tool from this plugin's helper MCP server
     render({ "analysis_json": <the JSON exactly as assess returned it>,
              "data_dir": <the fetch output directory> })
 
-Include `auto_deploy`, `review_required`, `feedback_url`,
-`app_interface_mode`, or `extra_guidance` only when the caller provided
-them.
+Include `auto_deploy`, `review_required`, or `extra_guidance` only when
+the caller provided them.
 
 The report footer credits the model named inside the analysis JSON — the
 assess agent states its own identity there, and validation rejects an
