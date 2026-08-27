@@ -32,10 +32,13 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 		return nil
 	}
 	// Allowed: a path component starting with "soundings-" (the prefix of
-	// every fetch output directory) and no ".." anywhere - the index hands
-	// the agent absolute paths, so traversal is never legitimate.
+	// every fetch output directory) and no ".." path segment - the index
+	// hands the agent absolute paths, so traversal is never legitimate.
+	// Checked segment-by-segment (not via strings.Contains) because slugified
+	// directory names can legitimately contain a literal ".." substring, e.g.
+	// GitHub compare-range slugs like "sha1...sha2".
 	path := filepath.ToSlash(in.ToolInput.FilePath)
-	if strings.Contains("/"+path, "/soundings-") && !strings.Contains(path, "..") {
+	if strings.Contains("/"+path, "/soundings-") && !hasDotDotSegment(path) {
 		return nil
 	}
 	return json.NewEncoder(stdout).Encode(map[string]any{
@@ -46,4 +49,15 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 				"soundings: the assess agent may only read the fetched soundings-* data directory; %q is outside it", path),
 		},
 	})
+}
+
+// hasDotDotSegment reports whether path contains a ".." path segment, as
+// opposed to a ".." substring inside a longer segment (e.g. "sha1...sha2").
+func hasDotDotSegment(path string) bool {
+	for _, part := range strings.Split(path, "/") {
+		if part == ".." {
+			return true
+		}
+	}
+	return false
 }
