@@ -28,7 +28,6 @@ func init() {
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"hasPrefix":           strings.HasPrefix,
-		"contains":            strings.Contains,
 		"escapePipes":         escapePipes,
 		"escapeCell":          escapeCell,
 		"authorizationStatus": authorizationStatus,
@@ -219,8 +218,6 @@ type ReportConfig struct {
 	UserGuidance            []types.UserGuidance
 	AutoDeployThreshold     int
 	ReviewRequiredThreshold int
-	AppInterfaceMode        bool
-	FeedbackURL             string
 }
 
 // TemplateData holds all data needed for template rendering
@@ -231,8 +228,6 @@ type TemplateData struct {
 	Documentation         []*types.Documentation
 	ReleaseRecommendation string
 	AllUserGuidance       []types.UserGuidance // All user guidance for comprehensive reporting
-	AppInterfaceMode      bool
-	FeedbackURL           string
 }
 
 // GenerateReport parses LLM response and generates the final report
@@ -269,8 +264,6 @@ func GenerateReport(config *ReportConfig) (score int, report string, err error) 
 		Documentation:         config.Documentation,
 		ReleaseRecommendation: recommendation,
 		AllUserGuidance:       config.UserGuidance,
-		AppInterfaceMode:      config.AppInterfaceMode,
-		FeedbackURL:           config.FeedbackURL,
 	}
 
 	// Execute pre-compiled template

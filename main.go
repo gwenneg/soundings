@@ -453,11 +453,9 @@ func countLines(s string) int {
 // ---------------------------------------------------------------------------
 
 type renderOpts struct {
-	AutoDeploy       int
-	ReviewRequired   int
-	FeedbackURL      string
-	AppInterfaceMode bool
-	ExtraGuidance    []extraGuidanceEntry
+	AutoDeploy     int
+	ReviewRequired int
+	ExtraGuidance  []extraGuidanceEntry
 }
 
 // RenderResult is the successful outcome of a render.
@@ -519,8 +517,6 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		UserGuidance:            guidance,
 		AutoDeployThreshold:     opts.AutoDeploy,
 		ReviewRequiredThreshold: opts.ReviewRequired,
-		AppInterfaceMode:        opts.AppInterfaceMode,
-		FeedbackURL:             opts.FeedbackURL,
 	})
 	if err != nil {
 		return nil, nil, err

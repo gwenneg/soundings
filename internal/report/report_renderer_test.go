@@ -373,7 +373,6 @@ func TestTemplateFuncs(t *testing.T) {
 
 	expectedFuncs := []string{
 		"hasPrefix",
-		"contains",
 		"escapePipes",
 		"escapeCell",
 		"authorizationStatus",
@@ -734,66 +733,6 @@ func TestGenerateReportPrefersAnalysisModel(t *testing.T) {
 	}
 	if strings.Contains(report, "flag-model") {
 		t.Error("report footer should not use the --model-id fallback when the analysis states a model")
-	}
-}
-
-func TestGenerateReportWithFeedbackURL(t *testing.T) {
-	jsonResponse := `{
-		"score": 85,
-		"summary": "Bug fix with low impact",
-		"risk_summary": {"concerns": [], "positives": ["Well tested"]},
-		"action_items": {"critical": [], "important": [], "followup": []},
-		"technical_details": {"code": [], "infrastructure": [], "dependencies": []},
-		"documentation_quality": "Good",
-		"documentation_recommendations": "None"
-	}`
-
-	config := &ReportConfig{
-		LLMResponse:             jsonResponse,
-		Metadata:                &ReportMetadata{ModelID: "test-model", GenerationTime: time.Now()},
-		AutoDeployThreshold:     80,
-		ReviewRequiredThreshold: 60,
-		FeedbackURL:             "https://forms.gle/test123",
-	}
-
-	_, report, err := GenerateReport(config)
-	if err != nil {
-		t.Fatalf("GenerateReport() error = %v", err)
-	}
-
-	if !strings.Contains(report, "https://forms.gle/test123") {
-		t.Error("GenerateReport() report missing feedback URL")
-	}
-	if !strings.Contains(report, "Share your feedback on this report") {
-		t.Error("GenerateReport() report missing feedback link text")
-	}
-}
-
-func TestGenerateReportWithoutFeedbackURL(t *testing.T) {
-	jsonResponse := `{
-		"score": 85,
-		"summary": "Bug fix with low impact",
-		"risk_summary": {"concerns": [], "positives": ["Well tested"]},
-		"action_items": {"critical": [], "important": [], "followup": []},
-		"technical_details": {"code": [], "infrastructure": [], "dependencies": []},
-		"documentation_quality": "Good",
-		"documentation_recommendations": "None"
-	}`
-
-	config := &ReportConfig{
-		LLMResponse:             jsonResponse,
-		Metadata:                &ReportMetadata{ModelID: "test-model", GenerationTime: time.Now()},
-		AutoDeployThreshold:     80,
-		ReviewRequiredThreshold: 60,
-	}
-
-	_, report, err := GenerateReport(config)
-	if err != nil {
-		t.Fatalf("GenerateReport() error = %v", err)
-	}
-
-	if strings.Contains(report, "Share your feedback on this report") {
-		t.Error("GenerateReport() report should not contain feedback link when FeedbackURL is empty")
 	}
 }
 
