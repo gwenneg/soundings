@@ -18,6 +18,7 @@ func TestRunHook(t *testing.T) {
 		{"plugin-namespaced assess denied", "soundings:assess", "Read", "/etc/passwd", true},
 		{"assess allowed in data dir", "assess", "Read", "/tmp/soundings-abc123/index.json", false},
 		{"assess allowed on patch file", "soundings:assess", "Read", "/var/folders/x1/T/soundings-42/patches/repo/001-main.go.patch", false},
+		{"assess allowed on compare-range slug with literal dots", "soundings:assess", "Read", "/tmp/soundings-2992028217/patches/notifications-gw_compare_7aa0d9f0e3c06af5ce556dd2110a3548bb27d87a...0a45e834e08306506fb11dbcf06d591531fca9b7-abcd1234/000.patch", false},
 		{"main session untouched", "", "Read", "/Users/someone/.ssh/id_rsa", false},
 		{"other agents untouched", "Explore", "Read", "/Users/someone/.ssh/id_rsa", false},
 		{"suffix must be a namespace", "harassess", "Read", "/etc/passwd", false},
