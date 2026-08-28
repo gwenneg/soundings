@@ -70,7 +70,7 @@ func (f *Fetcher) FetchReleaseData(ctx context.Context, compareURL string) (*typ
 	// Fetch diff and user guidance (sequential, as guidance depends on diff)
 	g.Go(func() error {
 		var err error
-		comparison, err = fetchDiff(gCtx, f.client, owner, repo, baseCommit, headCommit, compareURL)
+		comparison, err = fetchDiff(gCtx, f.client, f.config, owner, repo, baseCommit, headCommit, compareURL)
 		if err != nil {
 			return fmt.Errorf("failed to fetch and enrich comparison: %w", err)
 		}

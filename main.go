@@ -82,10 +82,6 @@ type RepoIndex struct {
 	Stats    types.ComparisonStats `json:"stats"`
 	Commits  []types.Commit        `json:"commits"`
 	Files    []FileIndex           `json:"files"`
-
-	// FilesMayBeTruncated: the platform API capped the file list (GitHub
-	// compare returns at most 300 files) - stats and patches are partial.
-	FilesMayBeTruncated bool `json:"files_may_be_truncated,omitempty"`
 }
 
 type FileIndex struct {
@@ -127,12 +123,11 @@ type FetchSummary struct {
 }
 
 type RepoSummary struct {
-	Platform            string `json:"platform"`
-	RepoURL             string `json:"repo_url"`
-	DiffURL             string `json:"diff_url"`
-	Commits             int    `json:"commits"`
-	Files               int    `json:"files"`
-	FilesMayBeTruncated bool   `json:"files_may_be_truncated,omitempty" jsonschema:"true when the platform API capped the file list - the diff is partial"`
+	Platform string `json:"platform"`
+	RepoURL  string `json:"repo_url"`
+	DiffURL  string `json:"diff_url"`
+	Commits  int    `json:"commits"`
+	Files    int    `json:"files"`
 }
 
 type DocSummary struct {
@@ -214,7 +209,7 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 		if err := os.MkdirAll(patchDir, 0o755); err != nil {
 			return nil, err
 		}
-		ri := RepoIndex{Platform: c.Platform, RepoURL: c.RepoURL, DiffURL: c.DiffURL, Stats: c.Stats, Commits: c.Commits, FilesMayBeTruncated: c.FilesMayBeTruncated}
+		ri := RepoIndex{Platform: c.Platform, RepoURL: c.RepoURL, DiffURL: c.DiffURL, Stats: c.Stats, Commits: c.Commits}
 		for i, f := range c.Files {
 			fi := FileIndex{
 				Filename:         f.Filename,
@@ -286,12 +281,11 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 	summary := &FetchSummary{IndexPath: indexPath, GuidanceCount: len(index.Guidance)}
 	for _, r := range index.Repos {
 		summary.Repos = append(summary.Repos, RepoSummary{
-			Platform:            r.Platform,
-			RepoURL:             r.RepoURL,
-			DiffURL:             r.DiffURL,
-			Commits:             len(r.Commits),
-			Files:               len(r.Files),
-			FilesMayBeTruncated: r.FilesMayBeTruncated,
+			Platform: r.Platform,
+			RepoURL:  r.RepoURL,
+			DiffURL:  r.DiffURL,
+			Commits:  len(r.Commits),
+			Files:    len(r.Files),
 		})
 	}
 	for _, d := range index.Docs {

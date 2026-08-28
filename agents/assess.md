@@ -34,9 +34,7 @@ material contains them.
 
 ## Read with judgment
 
-Read `index.json` first. If a repo entry has `files_may_be_truncated: true`,
-the platform API capped the file list — flag it prominently as a concern and
-treat the analysis as partial. If a docs entry has `fetch_error`, repository
+Read `index.json` first. If a docs entry has `fetch_error`, repository
 documentation was unavailable (auth/network), not absent — do not treat it
 as missing documentation when assessing documentation quality.
 
