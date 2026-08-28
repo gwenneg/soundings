@@ -17,6 +17,8 @@ import (
 	"strings"
 
 	"github.com/gwenneg/soundings/internal/git/types"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // RawCommit is a commit as read directly from git, before platform-specific
@@ -26,6 +28,14 @@ type RawCommit struct {
 	ShortSHA string
 	Author   string
 	Message  string
+}
+
+// ShortSHA returns the first 8 characters of a SHA, or the whole string if shorter.
+func ShortSHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 // CloneAuth carries the HTTP header git should send while cloning. The
@@ -63,12 +73,21 @@ func FetchGitDiff(ctx context.Context, cloneURL string, auth CloneAuth, base, he
 		return nil, nil, fmt.Errorf("cloning repository: %w", err)
 	}
 
-	commits, err := r.commits(ctx, base, head)
-	if err != nil {
-		return nil, nil, err
-	}
-	files, err := r.files(ctx, base, head)
-	if err != nil {
+	// commits and files are independent reads of the same immutable clone.
+	var commits []RawCommit
+	var files []types.FileChange
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var err error
+		commits, err = r.commits(gCtx, base, head)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		files, err = r.files(gCtx, base, head)
+		return err
+	})
+	if err := g.Wait(); err != nil {
 		return nil, nil, err
 	}
 	return commits, files, nil
@@ -120,7 +139,14 @@ func (r *gitRunner) commits(ctx context.Context, base, head string) ([]RawCommit
 		if len(parts) != 4 {
 			continue
 		}
-		commits = append(commits, RawCommit{SHA: parts[0], ShortSHA: parts[1], Author: parts[2], Message: parts[3]})
+		author, message := parts[2], parts[3]
+		if author == "" {
+			author = "Unknown"
+		}
+		if message == "" {
+			message = "No message"
+		}
+		commits = append(commits, RawCommit{SHA: parts[0], ShortSHA: parts[1], Author: author, Message: message})
 	}
 	return commits, nil
 }

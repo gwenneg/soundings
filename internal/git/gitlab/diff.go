@@ -68,12 +68,6 @@ func buildCommitEntry(ctx context.Context, client *gitlab.Client, rc shared.RawC
 		Message:  rc.Message,
 		Author:   rc.Author,
 	}
-	if entry.Message == "" {
-		entry.Message = "No message"
-	}
-	if entry.Author == "" {
-		entry.Author = "Unknown"
-	}
 
 	// Find MR for this commit
 	mrIID, err := getMRForCommit(ctx, client, projectPath, entry.SHA)
@@ -96,10 +90,10 @@ func buildCommitEntry(ctx context.Context, client *gitlab.Client, rc shared.RawC
 func getMRForCommit(ctx context.Context, client *gitlab.Client, projectPath, commitSHA string) (int64, error) {
 	mrs, _, err := client.Commits.ListMergeRequestsByCommit(projectPath, commitSHA, gitlab.WithContext(ctx))
 	if err != nil {
-		return 0, fmt.Errorf("failed to get MRs for commit %s: %w", shortSHA(commitSHA), err)
+		return 0, fmt.Errorf("failed to get MRs for commit %s: %w", shared.ShortSHA(commitSHA), err)
 	}
 
-	slog.Debug("GitLab API response", "commit", shortSHA(commitSHA), "found_mrs", len(mrs))
+	slog.Debug("GitLab API response", "commit", shared.ShortSHA(commitSHA), "found_mrs", len(mrs))
 
 	// Find first merged MR
 	for _, mr := range mrs {
@@ -109,12 +103,4 @@ func getMRForCommit(ctx context.Context, client *gitlab.Client, projectPath, com
 	}
 
 	return 0, nil
-}
-
-// shortSHA returns the first 8 characters of a SHA, or the whole string if shorter.
-func shortSHA(sha string) string {
-	if len(sha) > 8 {
-		return sha[:8]
-	}
-	return sha
 }
