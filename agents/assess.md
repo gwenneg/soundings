@@ -144,9 +144,13 @@ executable command or verifiable check with success criteria.
 | Vague | Specific |
 |-------|----------|
 | "Monitor error rates" | "Monitor HTTP 5xx on `/auth/validate` — alert if >1% over 5min" |
+| "Verify Redis memory" | "Confirm Redis has >2GB headroom for 2x session count (~100K sessions x 2KB = 200MB additional)" |
 | "Could affect sessions" | "Token validation in `auth/handler.go:validateToken()` now writes to DB — existing sessions hit the new path on next refresh" |
-| "DB migration risk" | "Migration adds `user_preferences` column; `UserService.getPrefs()` queries it but deploys first — throws 'column not found' until migration completes" |
 | "Test in staging" | "Run `./scripts/load-test.sh --endpoint=/auth/validate --rps=1000`, verify p99 < 200ms" |
+| "DB migration risk" | "Migration adds `user_preferences` column; `UserService.getPrefs()` queries it but deploys first — throws 'column not found' until migration completes" |
+| "Combined risk exists" | "New index on `orders.created_at` (10M rows, ~3min lock) + Black Friday traffic spike = potential 3min outage on order creation endpoint" |
+| "Test the endpoint" | "POST to `/api/v2/checkout` with payload from `test/fixtures/large_cart.json`, verify 200 response in < 2s and `order_id` in response body" |
+| "Check the logs" | "Query `kubectl logs -l app=payment-service --since=1h \| grep -c 'PaymentFailed'` — should be < 10 (baseline: 2-3/hour)" |
 
 ## Output
 
