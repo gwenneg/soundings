@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,6 +45,8 @@ import (
 const pluginVersion = "0.2.5"
 
 func main() {
+	initLogging()
+
 	if len(os.Args) == 2 && os.Args[1] == "hook" {
 		if err := runHook(os.Stdin, os.Stdout); err != nil {
 			// Exit 1 is a non-blocking hook error: surfaced, but it does
@@ -66,6 +69,25 @@ func main() {
 		fmt.Fprintf(os.Stderr, "soundings: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func initLogging() {
+	level := slog.LevelInfo
+	if v := os.Getenv("SOUNDINGS_LOG_LEVEL"); v != "" {
+		switch strings.ToLower(v) {
+		case "debug":
+			level = slog.LevelDebug
+		case "info":
+			level = slog.LevelInfo
+		case "warn":
+			level = slog.LevelWarn
+		case "error":
+			level = slog.LevelError
+		default:
+			fmt.Fprintf(os.Stderr, "soundings: SOUNDINGS_LOG_LEVEL=%q is not recognized (valid: debug, info, warn, error); using info\n", v)
+		}
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 }
 
 type Index struct {
@@ -146,6 +168,7 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("no compare URLs provided")
 	}
+	slog.Info("Starting fetch", "compare_urls", urls)
 	// Absolute paths in index.json so render works from any directory.
 	absOut, err := filepath.Abs(outDir)
 	if err != nil {
@@ -174,6 +197,7 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 			if !ok {
 				return fmt.Errorf("unsupported compare URL: %s", u)
 			}
+			slog.Debug("Fetching data", "platform", provider.Name(), "url", u)
 			comparison, ug, doc, err := provider.FetchReleaseData(gCtx, u)
 			if err != nil {
 				return fmt.Errorf("failed to fetch %s: %w", u, err)
@@ -185,8 +209,12 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 			defer mu.Unlock()
 			comparisons = append(comparisons, comparison)
 			guidance = append(guidance, ug...)
+			if len(ug) > 0 {
+				slog.Debug("Collected user guidance", "platform", provider.Name(), "count", len(ug))
+			}
 			if doc != nil && (doc.MainDocFile != "" || doc.FetchError != "") {
 				docs = append(docs, doc)
+				slog.Debug("Collected documentation", "platform", provider.Name(), "repo", doc.Repository.URL)
 			}
 			return nil
 		})
@@ -277,6 +305,8 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 	if err := os.WriteFile(indexPath, data, 0o644); err != nil {
 		return nil, err
 	}
+
+	slog.Info("Fetch complete", "repos", len(index.Repos), "guidance", len(index.Guidance), "docs", len(index.Docs))
 
 	summary := &FetchSummary{IndexPath: indexPath, GuidanceCount: len(index.Guidance)}
 	for _, r := range index.Repos {
@@ -503,6 +533,8 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		guidance = append(guidance, extra...)
 	}
 
+	slog.Info("Rendering report", "data_dir", dataDir, "auto_deploy", opts.AutoDeploy, "review_required", opts.ReviewRequired)
+
 	score, out, err := report.GenerateReport(&report.ReportConfig{
 		LLMResponse:             analysisJSON,
 		Metadata:                &report.ReportMetadata{GenerationTime: time.Now().UTC()},
@@ -515,6 +547,8 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 	if err != nil {
 		return nil, nil, err
 	}
+
+	slog.Info("Render complete", "score", score)
 
 	return &RenderResult{Score: score, ReportMarkdown: out}, nil, nil
 }
