@@ -69,12 +69,6 @@ func buildCommitEntry(ctx context.Context, client *github.Client, rc shared.RawC
 		Message:  rc.Message,
 		Author:   rc.Author,
 	}
-	if entry.Message == "" {
-		entry.Message = "No message"
-	}
-	if entry.Author == "" {
-		entry.Author = "Unknown"
-	}
 
 	// Find PR for this commit
 	prNumber, err := getPRForCommit(ctx, client, owner, repo, entry.SHA)
@@ -97,10 +91,10 @@ func buildCommitEntry(ctx context.Context, client *github.Client, rc shared.RawC
 func getPRForCommit(ctx context.Context, client *github.Client, owner, repo, commitSHA string) (int, error) {
 	prs, resp, err := client.PullRequests.ListPullRequestsWithCommit(ctx, owner, repo, commitSHA, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to find PRs for commit %s: %w", shortSHA(commitSHA), err)
+		return 0, fmt.Errorf("failed to find PRs for commit %s: %w", shared.ShortSHA(commitSHA), err)
 	}
 
-	slog.Debug("GitHub API response", "commit", shortSHA(commitSHA), "found_prs", len(prs), "rate_limit_remaining", resp.Rate.Remaining)
+	slog.Debug("GitHub API response", "commit", shared.ShortSHA(commitSHA), "found_prs", len(prs), "rate_limit_remaining", resp.Rate.Remaining)
 
 	// Find the first merged PR that belongs to the analyzed repository.
 	// ListPullRequestsWithCommit returns PRs from the whole fork network, so
@@ -114,12 +108,4 @@ func getPRForCommit(ctx context.Context, client *github.Client, owner, repo, com
 	}
 
 	return 0, nil
-}
-
-// shortSHA returns the first 8 characters of a SHA, or the whole string if shorter.
-func shortSHA(sha string) string {
-	if len(sha) > 8 {
-		return sha[:8]
-	}
-	return sha
 }
