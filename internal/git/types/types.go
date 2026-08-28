@@ -13,11 +13,6 @@ type Comparison struct {
 	Commits  []Commit        `json:"commits"`  // Commits in this comparison with full metadata
 	Files    []FileChange    `json:"files"`    // Files changed in this comparison
 	Stats    ComparisonStats `json:"stats"`    // Statistics about the comparison
-
-	// FilesMayBeTruncated is set when the platform API capped the file list
-	// (GitHub's compare API returns at most 300 files), meaning Files and
-	// Stats describe only part of the diff.
-	FilesMayBeTruncated bool `json:"files_may_be_truncated,omitempty"`
 }
 
 // ComparisonStats represents statistics about the comparison

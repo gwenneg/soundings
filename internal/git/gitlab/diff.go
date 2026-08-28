@@ -4,53 +4,51 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
+	"github.com/gwenneg/soundings/internal/config"
+	"github.com/gwenneg/soundings/internal/git/shared"
 	"github.com/gwenneg/soundings/internal/git/types"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
 	"golang.org/x/sync/errgroup"
 )
 
-// fetchDiff fetches comparison data from GitLab and augments commits with MR metadata
-// Returns a complete Comparison with augmented commits, files, and stats
-// The cache parameter allows sharing cached MR objects across multiple operations
-func fetchDiff(ctx context.Context, client *gitlab.Client, host, projectPath, base, head, diffURL string) (*types.Comparison, error) {
+// fetchDiff computes the comparison's commit list and per-file diff via a
+// local git clone (see shared.FetchGitDiff), then augments each commit with
+// its MR number via the GitLab API - git has no notion of merge requests, so
+// that part still requires the API client.
+func fetchDiff(ctx context.Context, client *gitlab.Client, cfg *config.Config, host, projectPath, base, head, diffURL string) (*types.Comparison, error) {
 	slog.Debug("Starting comparison fetch and commit augmentation", "project", projectPath, "base", base, "head", head)
 
-	// Fetch comparison
-	compareOpts := &gitlab.CompareOptions{
-		From:     &base,
-		To:       &head,
-		Straight: gitlab.Ptr(false), // Use three-dot comparison (like GitHub)
+	cloneURL := fmt.Sprintf("https://%s/%s.git", host, projectPath)
+	var auth shared.CloneAuth
+	if cfg.GitLabToken != "" {
+		auth.Header = shared.BasicAuthHeader("oauth2", cfg.GitLabToken)
 	}
-	compare, _, err := client.Repositories.Compare(projectPath, compareOpts, gitlab.WithContext(ctx))
+
+	rawCommits, files, err := shared.FetchGitDiff(ctx, cloneURL, auth, base, head)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch comparison: %w", err)
+		return nil, fmt.Errorf("failed to fetch diff via git: %w", err)
 	}
 
-	slog.Debug("GitLab comparison fetched", "commits", len(compare.Commits), "diffs", len(compare.Diffs))
+	slog.Debug("Fetched diff via git", "commits", len(rawCommits), "files", len(files))
 
-	// Convert diffs to files (calculates per-file stats once)
-	files := convertDiffs(compare.Diffs)
-
-	// Initialize comparison with files and stats from GitLab
 	comparison := &types.Comparison{
 		Platform: "gitlab",
 		RepoURL:  fmt.Sprintf("https://%s/%s", host, projectPath),
 		DiffURL:  diffURL,
-		Commits:  make([]types.Commit, len(compare.Commits)),
+		Commits:  make([]types.Commit, len(rawCommits)),
 		Files:    files,
-		Stats:    calculateStats(files),
+		Stats:    shared.CalculateStats(files),
 	}
 
 	// Process each commit for augmentation in parallel (MR number)
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // Limit concurrent API calls to avoid rate limiting
 
-	for i, commit := range compare.Commits {
+	for i, rc := range rawCommits {
 		g.Go(func() error {
-			comparison.Commits[i] = buildCommitEntry(gCtx, client, commit, projectPath)
+			comparison.Commits[i] = buildCommitEntry(gCtx, client, rc, projectPath)
 			return nil
 		})
 	}
@@ -61,23 +59,20 @@ func fetchDiff(ctx context.Context, client *gitlab.Client, host, projectPath, ba
 	return comparison, nil
 }
 
-// buildCommitEntry creates a commit entry from a GitLab commit, resolving its MR number
-func buildCommitEntry(ctx context.Context, client *gitlab.Client, commit *gitlab.Commit, projectPath string) types.Commit {
+// buildCommitEntry turns a git-log-sourced commit into a types.Commit,
+// resolving its MR number via the GitLab API.
+func buildCommitEntry(ctx context.Context, client *gitlab.Client, rc shared.RawCommit, projectPath string) types.Commit {
 	entry := types.Commit{
-		SHA:      commit.ID,
-		ShortSHA: commit.ShortID,
-		Message:  "No message",
-		Author:   "Unknown",
+		SHA:      rc.SHA,
+		ShortSHA: rc.ShortSHA,
+		Message:  rc.Message,
+		Author:   rc.Author,
 	}
-
-	// Extract commit message (first line only)
-	if commit.Message != "" {
-		entry.Message = strings.TrimSpace(strings.SplitN(commit.Message, "\n", 2)[0])
+	if entry.Message == "" {
+		entry.Message = "No message"
 	}
-
-	// Extract author name
-	if commit.AuthorName != "" {
-		entry.Author = commit.AuthorName
+	if entry.Author == "" {
+		entry.Author = "Unknown"
 	}
 
 	// Find MR for this commit
@@ -114,94 +109,6 @@ func getMRForCommit(ctx context.Context, client *gitlab.Client, projectPath, com
 	}
 
 	return 0, nil
-}
-
-// convertDiffs converts GitLab Diffs to platform-agnostic FileChanges
-func convertDiffs(diffs []*gitlab.Diff) []types.FileChange {
-	if diffs == nil {
-		return []types.FileChange{}
-	}
-
-	result := make([]types.FileChange, 0, len(diffs))
-	for _, diff := range diffs {
-		result = append(result, convertDiff(diff))
-	}
-	return result
-}
-
-// convertDiff converts a GitLab Diff to platform-agnostic FileChange
-func convertDiff(diff *gitlab.Diff) types.FileChange {
-	if diff == nil {
-		return types.FileChange{}
-	}
-
-	fileChange := types.FileChange{
-		Filename:         diff.NewPath,
-		Patch:            diff.Diff,
-		PreviousFilename: diff.OldPath,
-	}
-
-	// Determine status
-	if diff.NewFile {
-		fileChange.Status = "added"
-	} else if diff.DeletedFile {
-		fileChange.Status = "removed"
-	} else if diff.RenamedFile {
-		fileChange.Status = "renamed"
-	} else {
-		fileChange.Status = "modified"
-	}
-
-	// Calculate additions/deletions from patch
-	// GitLab doesn't provide these directly, so we parse the diff
-	additions, deletions := parsePatchStats(diff.Diff)
-	fileChange.Additions = additions
-	fileChange.Deletions = deletions
-	fileChange.Changes = additions + deletions
-
-	return fileChange
-}
-
-// calculateStats calculates comparison statistics from converted files
-func calculateStats(files []types.FileChange) types.ComparisonStats {
-	stats := types.ComparisonStats{
-		TotalFiles: len(files),
-	}
-
-	for _, file := range files {
-		stats.TotalAdditions += file.Additions
-		stats.TotalDeletions += file.Deletions
-	}
-
-	stats.TotalChanges = stats.TotalAdditions + stats.TotalDeletions
-	return stats
-}
-
-// parsePatchStats counts additions and deletions from a unified diff patch
-func parsePatchStats(patch string) (additions, deletions int) {
-	if patch == "" {
-		return 0, 0
-	}
-
-	for _, line := range strings.Split(patch, "\n") {
-		if len(line) == 0 {
-			continue
-		}
-		switch line[0] {
-		case '+':
-			// Skip only real "+++ b/file" headers; count added blank lines
-			// ("+") and content starting with '+' ("++i;")
-			if !strings.HasPrefix(line, "+++ ") {
-				additions++
-			}
-		case '-':
-			if !strings.HasPrefix(line, "--- ") {
-				deletions++
-			}
-		}
-	}
-
-	return additions, deletions
 }
 
 // shortSHA returns the first 8 characters of a SHA, or the whole string if shorter.
