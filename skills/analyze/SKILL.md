@@ -7,7 +7,7 @@ description: >-
   or diff range for deployment confidence, or asks "is this safe to ship?".
   Accepts multiple compare URLs in one invocation and analyzes them
   together to detect compound risks across repositories.
-allowed-tools: mcp__plugin_soundings_helper__fetch, mcp__plugin_soundings_helper__render
+allowed-tools: mcp__plugin_soundings_helper__fetch, mcp__plugin_soundings_helper__render, AskUserQuestion
 disallowed-tools: Bash, Edit, NotebookEdit, WebFetch, WebSearch
 ---
 
@@ -29,7 +29,8 @@ pass: score thresholds (defaults: auto-deploy 80, review-required 60),
 pre-authorized guidance entries (a JSON array of objects with `content`,
 `author`, `date`, and `comment_url` fields, passed to the renderer via
 `--extra-guidance`), and caller notes for the assessment. If no compare
-URL was provided, ask for one — do not guess.
+URL was provided, use the AskUserQuestion tool to ask for one — do not
+guess.
 
 ## Step 1 — fetch release data
 
