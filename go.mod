@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/google/go-github/v90 v90.0.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
-	gitlab.com/gitlab-org/api/client-go/v2 v2.58.2
+	gitlab.com/gitlab-org/api/client-go/v2 v2.59.0
 	golang.org/x/sync v0.22.0
 )
 
