@@ -101,12 +101,18 @@ func extractUserGuidance(ctx context.Context, client *gitlab.Client, projectPath
 		return nil
 	})
 
-	// Fetch MR approvers for authorization check
+	// Fetch MR approvers for authorization check. A failure here (missing
+	// token scope, approvals disabled on this project/instance, a transient
+	// API issue) degrades to "no known approvers" - the conservative
+	// default, since isAuthorized still requires proof, never assumes it -
+	// rather than failing the whole fetch: guidance is a supplementary
+	// signal, not essential data the run can't proceed without.
 	g.Go(func() error {
 		var err error
 		approvers, err = getMRApprovers(gCtx, client, projectPath, mrIID)
 		if err != nil {
-			return fmt.Errorf("failed to get MR approvers for !%d: %w", mrIID, err)
+			slog.Warn("Failed to fetch MR approvers; guidance from this MR will only be authorized if from the MR author", "mr", mrIID, "error", err)
+			approvers = nil
 		}
 		return nil
 	})
