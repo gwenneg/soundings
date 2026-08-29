@@ -69,9 +69,10 @@ type Documentation struct {
 
 // UserGuidance represents a complete user guidance with metadata for reporting
 type UserGuidance struct {
-	Content      string    `json:"content"`       // The actual guidance content
-	Author       string    `json:"author"`        // Platform username who posted it
-	Date         time.Time `json:"date"`          // When it was posted
-	CommentURL   string    `json:"comment_url"`   // Direct link to the comment
-	IsAuthorized bool      `json:"is_authorized"` // Whether the author had permission to post
+	Content      string    `json:"content"`               // The actual guidance content
+	Author       string    `json:"author"`                // Platform username who posted it
+	Date         time.Time `json:"date"`                  // When it was posted
+	CommentURL   string    `json:"comment_url"`           // Direct link to the comment
+	IsAuthorized bool      `json:"is_authorized"`         // Whether the author had permission to post
+	IsExternal   bool      `json:"is_external,omitempty"` // Caller-supplied (extra_guidance), not sourced from - or verified against - a fetched PR/MR
 }

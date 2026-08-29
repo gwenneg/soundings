@@ -97,6 +97,28 @@ func TestAuthorizationStatus(t *testing.T) {
 	}
 }
 
+func TestGuidanceStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		guidance types.UserGuidance
+		expected string
+	}{
+		{"authorized", types.UserGuidance{IsAuthorized: true}, "✅ Authorized"},
+		{"unauthorized", types.UserGuidance{IsAuthorized: false}, "❌ Unauthorized"},
+		{"external takes precedence over authorized", types.UserGuidance{IsAuthorized: true, IsExternal: true}, "🌐 External (not scored)"},
+		{"external takes precedence over unauthorized", types.UserGuidance{IsAuthorized: false, IsExternal: true}, "🌐 External (not scored)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := guidanceStatus(tt.guidance)
+			if result != tt.expected {
+				t.Errorf("guidanceStatus(%+v) = %q, want %q", tt.guidance, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestPRLink(t *testing.T) {
 	tests := []struct {
 		name     string

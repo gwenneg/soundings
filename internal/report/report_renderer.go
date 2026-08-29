@@ -31,6 +31,7 @@ func templateFuncs() template.FuncMap {
 		"escapePipes":         escapePipes,
 		"escapeCell":          escapeCell,
 		"authorizationStatus": authorizationStatus,
+		"guidanceStatus":      guidanceStatus,
 		"prLink":              prLink,
 		"formatAuthor":        formatAuthor,
 		"docURL":              docURL,
@@ -62,6 +63,20 @@ func authorizationStatus(isAuthorized bool) string {
 		return "✅ Authorized"
 	}
 	return "❌ Unauthorized"
+}
+
+// guidanceStatus is the status column for the user guidance table. External
+// entries (extra_guidance, caller-supplied) are neither sourced from nor
+// verified against a fetched PR/MR - IsAuthorized is asserted by the
+// caller, not checked - so they get their own label rather than reusing
+// "Authorized", which would otherwise misleadingly imply the same
+// verification (and, per the report's own caption, that they were used in
+// scoring - they aren't).
+func guidanceStatus(g types.UserGuidance) string {
+	if g.IsExternal {
+		return "🌐 External (not scored)"
+	}
+	return authorizationStatus(g.IsAuthorized)
 }
 
 func prLink(prNumber int64, repoURL, platform string) string {
