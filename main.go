@@ -42,7 +42,7 @@ import (
 )
 
 // pluginVersion mirrors .claude-plugin/plugin.json; bump both together.
-const pluginVersion = "0.2.5"
+const pluginVersion = "0.2.6"
 
 func main() {
 	initLogging()
