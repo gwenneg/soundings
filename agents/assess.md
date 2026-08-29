@@ -119,6 +119,16 @@ Timing dependencies to check: migration before code deploy; flags disabled
 before code removal; cache warmed before traffic shift; external service
 updated before internal changes.
 
+## Multi-service deployments (when a run spans multiple repos)
+
+- **API contract compatibility**: do the services still agree on the API
+  shape after these changes — request/response fields, event schemas,
+  headers?
+- **Deployment order dependencies**: does one repo's change assume the
+  other has already deployed (or not yet)?
+- **Rollback complexity across services**: if one repo's deploy is rolled
+  back alone, do the others still work against it?
+
 ## Database migration deep-dive (when any DB change is present)
 
 Reversibility (what data is lost on rollback? any DROP/TRUNCATE?), lock
