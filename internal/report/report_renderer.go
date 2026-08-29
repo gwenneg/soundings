@@ -218,6 +218,17 @@ type ReportConfig struct {
 	UserGuidance            []types.UserGuidance
 	AutoDeployThreshold     int
 	ReviewRequiredThreshold int
+	TruncationInfo          *TruncationInfo
+}
+
+// TruncationInfo summarizes patch truncation applied at fetch time (see
+// internal/risk.Truncate), so the report can disclose that the analysis
+// didn't see every line of every file. Nil when nothing was truncated.
+type TruncationInfo struct {
+	TotalFiles     int
+	FilesPreserved int
+	FilesTruncated int
+	TruncatedFiles []string
 }
 
 // TemplateData holds all data needed for template rendering
@@ -228,6 +239,7 @@ type TemplateData struct {
 	Documentation         []*types.Documentation
 	ReleaseRecommendation string
 	AllUserGuidance       []types.UserGuidance // All user guidance for comprehensive reporting
+	TruncationInfo        *TruncationInfo
 }
 
 // GenerateReport parses LLM response and generates the final report
@@ -264,6 +276,7 @@ func GenerateReport(config *ReportConfig) (score int, report string, err error) 
 		Documentation:         config.Documentation,
 		ReleaseRecommendation: recommendation,
 		AllUserGuidance:       config.UserGuidance,
+		TruncationInfo:        config.TruncationInfo,
 	}
 
 	// Execute pre-compiled template

@@ -12,6 +12,29 @@
 
 ---
 
+{{- if .TruncationInfo}}
+
+<details>
+<summary><strong>✂️ Diff Truncation Applied</strong></summary>
+
+Due to the large size of some changed files, their patches were truncated
+before analysis:
+
+- **Files fully analyzed:** {{.TruncationInfo.FilesPreserved}}/{{.TruncationInfo.TotalFiles}}
+- **Files truncated:** {{.TruncationInfo.FilesTruncated}}
+{{- range .TruncationInfo.TruncatedFiles}}
+  - `{{.}}`
+{{- end}}
+
+Critical-risk files (database, security, auth, API contracts) are never
+truncated, however large. Truncated files keep their beginning and end;
+only the middle section is omitted.
+
+</details>
+
+---
+{{- end}}
+
 
 
 ## 🔍 Risk Analysis

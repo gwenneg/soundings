@@ -116,6 +116,7 @@ type FileIndex struct {
 	RiskTier         string `json:"risk_tier"`
 	PatchLines       int    `json:"patch_lines"`
 	PatchFile        string `json:"patch_file,omitempty"`
+	Truncated        bool   `json:"truncated,omitempty"`
 }
 
 type DocIndex struct {
@@ -249,9 +250,15 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 				RiskTier:         risk.ClassifyFile(f.Filename),
 				PatchLines:       countLines(f.Patch),
 			}
-			if f.Patch != "" {
+			patch := f.Patch
+			if truncated, ok := risk.Truncate(patch, fi.RiskTier); ok {
+				patch = truncated
+				fi.Truncated = true
+				slog.Debug("Truncated large patch", "file", f.Filename, "risk_tier", fi.RiskTier, "patch_lines", fi.PatchLines)
+			}
+			if patch != "" {
 				p := filepath.Join(patchDir, fmt.Sprintf("%03d-%s.patch", i, slug(f.Filename)))
-				if err := os.WriteFile(p, []byte(f.Patch), 0o644); err != nil {
+				if err := os.WriteFile(p, []byte(patch), 0o644); err != nil {
 					return nil, err
 				}
 				fi.PatchFile = p
@@ -543,6 +550,7 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		UserGuidance:            guidance,
 		AutoDeployThreshold:     opts.AutoDeploy,
 		ReviewRequiredThreshold: opts.ReviewRequired,
+		TruncationInfo:          truncationInfo(&index),
 	})
 	if err != nil {
 		return nil, nil, err
@@ -599,6 +607,27 @@ func reconstruct(index *Index) ([]*types.Comparison, []*types.Documentation, err
 		documentation = append(documentation, doc)
 	}
 	return comparisons, documentation, nil
+}
+
+// truncationInfo summarizes the truncation applied at fetch time (see
+// risk.Truncate) across all repos, for report disclosure. Returns nil when
+// nothing was truncated, so the report omits the section entirely.
+func truncationInfo(index *Index) *report.TruncationInfo {
+	info := &report.TruncationInfo{}
+	for _, r := range index.Repos {
+		for _, f := range r.Files {
+			info.TotalFiles++
+			if f.Truncated {
+				info.FilesTruncated++
+				info.TruncatedFiles = append(info.TruncatedFiles, f.Filename)
+			}
+		}
+	}
+	if info.FilesTruncated == 0 {
+		return nil
+	}
+	info.FilesPreserved = info.TotalFiles - info.FilesTruncated
+	return info
 }
 
 // extraGuidanceEntry is the caller-facing shape for --extra-guidance files.
