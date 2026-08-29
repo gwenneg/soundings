@@ -91,10 +91,24 @@ func initLogging() {
 }
 
 type Index struct {
-	CompareURLs []string             `json:"compare_urls"`
-	Repos       []RepoIndex          `json:"repos"`
-	Guidance    []types.UserGuidance `json:"guidance"`
-	Docs        []DocIndex           `json:"docs"`
+	CompareURLs []string        `json:"compare_urls"`
+	Repos       []RepoIndex     `json:"repos"`
+	Guidance    []IndexGuidance `json:"guidance"`
+	Docs        []DocIndex      `json:"docs"`
+}
+
+// IndexGuidance is user guidance as embedded in index.json, the file the
+// isolated assess agent reads. It is deliberately authorized-only and has
+// no is_authorized field: unauthorized guidance is excluded entirely
+// rather than redacted in place, so neither its content nor any other of
+// its fields (e.g. a deliberately provocative author name) ever reach the
+// agent's context. The full, unfiltered list - for the report's
+// transparency table - lives separately in guidance.json.
+type IndexGuidance struct {
+	Content    string    `json:"content"`
+	Author     string    `json:"author"`
+	Date       time.Time `json:"date"`
+	CommentURL string    `json:"comment_url"`
 }
 
 type RepoIndex struct {
@@ -224,10 +238,10 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 		return nil, err
 	}
 
-	index := Index{CompareURLs: urls, Guidance: guidance}
-	if index.Guidance == nil {
-		index.Guidance = []types.UserGuidance{}
+	if guidance == nil {
+		guidance = []types.UserGuidance{}
 	}
+	index := Index{CompareURLs: urls, Guidance: authorizedIndexGuidance(guidance)}
 
 	// Write patches and build the per-repo index.
 	for _, c := range comparisons {
@@ -313,9 +327,21 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 		return nil, err
 	}
 
-	slog.Info("Fetch complete", "repos", len(index.Repos), "guidance", len(index.Guidance), "docs", len(index.Docs))
+	// guidance.json carries the full, unfiltered guidance list (including
+	// unauthorized entries) for the render step's transparency table. It is
+	// never referenced by assess.md and is not part of what the isolated
+	// assess agent is instructed to read.
+	guidanceData, err := json.MarshalIndent(guidance, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "guidance.json"), guidanceData, 0o644); err != nil {
+		return nil, err
+	}
 
-	summary := &FetchSummary{IndexPath: indexPath, GuidanceCount: len(index.Guidance)}
+	slog.Info("Fetch complete", "repos", len(index.Repos), "guidance", len(guidance), "docs", len(index.Docs))
+
+	summary := &FetchSummary{IndexPath: indexPath, GuidanceCount: len(guidance)}
 	for _, r := range index.Repos {
 		summary.Repos = append(summary.Repos, RepoSummary{
 			Platform: r.Platform,
@@ -531,7 +557,17 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		return nil, nil, err
 	}
 
-	guidance := index.Guidance
+	// guidance.json, not index.json's (authorized-only) Guidance field: the
+	// report's transparency table needs the full list, including
+	// unauthorized entries, with their is_authorized status.
+	guidanceData, err := os.ReadFile(filepath.Join(dataDir, "guidance.json"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading guidance: %w", err)
+	}
+	var guidance []types.UserGuidance
+	if err := json.Unmarshal(guidanceData, &guidance); err != nil {
+		return nil, nil, fmt.Errorf("parsing guidance: %w", err)
+	}
 	if len(opts.ExtraGuidance) > 0 {
 		extra, err := toUserGuidance(opts.ExtraGuidance)
 		if err != nil {
@@ -607,6 +643,28 @@ func reconstruct(index *Index) ([]*types.Comparison, []*types.Documentation, err
 		documentation = append(documentation, doc)
 	}
 	return comparisons, documentation, nil
+}
+
+// authorizedIndexGuidance filters guidance down to authorized entries for
+// embedding in index.json, the file the isolated assess agent reads.
+// Unauthorized guidance is excluded entirely rather than redacted in
+// place: the agent has no legitimate use for it, and dropping the whole
+// entry - not just its content - keeps every field (including a
+// deliberately provocative author name) out of the agent's context.
+func authorizedIndexGuidance(guidance []types.UserGuidance) []IndexGuidance {
+	out := make([]IndexGuidance, 0, len(guidance))
+	for _, g := range guidance {
+		if !g.IsAuthorized {
+			continue
+		}
+		out = append(out, IndexGuidance{
+			Content:    g.Content,
+			Author:     g.Author,
+			Date:       g.Date,
+			CommentURL: g.CommentURL,
+		})
+	}
+	return out
 }
 
 // truncationInfo summarizes the truncation applied at fetch time (see
