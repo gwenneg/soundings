@@ -453,6 +453,70 @@ func TestGenerateReport(t *testing.T) {
 	}
 }
 
+func TestGenerateReportWithTruncationInfo(t *testing.T) {
+	minimalJSON := `{
+		"score": 85,
+		"summary": "Bug fix with low impact",
+		"risk_summary": {"concerns": [], "positives": []},
+		"action_items": {"critical": [], "important": [], "followup": []},
+		"technical_details": {"code": [], "infrastructure": [], "dependencies": []},
+		"documentation_quality": "Good",
+		"documentation_recommendations": "None"
+	}`
+
+	config := &ReportConfig{
+		LLMResponse:             minimalJSON,
+		Metadata:                &ReportMetadata{ModelID: "test-model", GenerationTime: time.Now()},
+		AutoDeployThreshold:     80,
+		ReviewRequiredThreshold: 60,
+		TruncationInfo: &TruncationInfo{
+			TotalFiles:     3,
+			FilesPreserved: 2,
+			FilesTruncated: 1,
+			TruncatedFiles: []string{"package-lock.json"},
+		},
+	}
+
+	_, report, err := GenerateReport(config)
+	if err != nil {
+		t.Fatalf("GenerateReport() error = %v", err)
+	}
+
+	for _, want := range []string{"Diff Truncation Applied", "2/3", "package-lock.json"} {
+		if !strings.Contains(report, want) {
+			t.Errorf("GenerateReport() report missing %q", want)
+		}
+	}
+}
+
+func TestGenerateReportWithoutTruncationInfo(t *testing.T) {
+	minimalJSON := `{
+		"score": 85,
+		"summary": "Bug fix with low impact",
+		"risk_summary": {"concerns": [], "positives": []},
+		"action_items": {"critical": [], "important": [], "followup": []},
+		"technical_details": {"code": [], "infrastructure": [], "dependencies": []},
+		"documentation_quality": "Good",
+		"documentation_recommendations": "None"
+	}`
+
+	config := &ReportConfig{
+		LLMResponse:             minimalJSON,
+		Metadata:                &ReportMetadata{ModelID: "test-model", GenerationTime: time.Now()},
+		AutoDeployThreshold:     80,
+		ReviewRequiredThreshold: 60,
+	}
+
+	_, report, err := GenerateReport(config)
+	if err != nil {
+		t.Fatalf("GenerateReport() error = %v", err)
+	}
+
+	if strings.Contains(report, "Diff Truncation Applied") {
+		t.Error("GenerateReport() report should not mention truncation when TruncationInfo is nil")
+	}
+}
+
 func TestGenerateReportInvalidJSON(t *testing.T) {
 	config := &ReportConfig{
 		LLMResponse:             "not valid json",

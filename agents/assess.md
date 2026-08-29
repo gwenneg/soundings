@@ -52,6 +52,11 @@ it upward:
 - `low` (tests, docs, generated files): skim or rely on the index metadata;
   read them when they are evidence for test coverage claims.
 
+A `truncated: true` entry means the patch file itself already had its
+middle cut at fetch time (marked inline with an omission count) to bound
+its size — this only ever happens to `high`/`medium`/`low` tier files;
+`critical` files are never truncated, however large.
+
 Record what you read fully vs. skimmed and why — it goes in the
 `technical_details` for transparency.
 
