@@ -710,6 +710,7 @@ func toUserGuidance(entries []extraGuidanceEntry) ([]types.UserGuidance, error) 
 			Author:       e.Author,
 			CommentURL:   e.CommentURL,
 			IsAuthorized: true,
+			IsExternal:   true,
 		}
 		if e.Date != "" {
 			for _, layout := range []string{time.RFC3339, "2006-01-02 15:04", "2006-01-02"} {
