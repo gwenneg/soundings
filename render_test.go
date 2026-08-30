@@ -84,7 +84,7 @@ func TestDoRenderPersistsAnalysisOnValidationFailure(t *testing.T) {
 	}
 }
 
-func TestDoRenderWritesAndRegistersReportCopy(t *testing.T) {
+func TestDoRenderWritesReportCopy(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
 	dataDir := renderFixture(t)
 	reportPath := filepath.Join(t.TempDir(), "soundings-report.md")
@@ -101,21 +101,6 @@ func TestDoRenderWritesAndRegistersReportCopy(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(content), reportBanner) {
 		t.Errorf("report copy does not start with the report banner")
-	}
-
-	resolved, err := canonicalPath(reportPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, files := allowedTargets()
-	found := false
-	for _, f := range files {
-		if f == resolved {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("report copy %s not registered; files = %v", resolved, files)
 	}
 
 	// A second run may overwrite its own report.

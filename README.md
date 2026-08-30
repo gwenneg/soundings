@@ -127,11 +127,9 @@ helper itself persists the analysis JSON and the rendered report into the
 data directory, and writes the caller-chosen `report_path` copy (absolute
 `.md` path only; an existing file is only overwritten when it is a
 previously generated soundings report, so the auto-approved tool cannot be
-steered into clobbering arbitrary files). That copy is registered with the
-confinement hook, so editing it afterwards — e.g. asking to annotate the
-report — is pre-approved as well; Write/Edit calls anywhere else get no
-opinion from the hook and follow the session's normal permission flow. A
-normal run is fully prompt-free.
+steered into clobbering arbitrary files). The analyze skill turn disallows
+the Write tool outright — every file this pipeline produces is written by
+the helper. A normal run is fully prompt-free.
 
 ## Status
 

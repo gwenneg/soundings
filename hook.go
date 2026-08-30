@@ -24,9 +24,8 @@ import (
 // the prompt, not override a configured deny.
 //
 // The hook also pre-approves this plugin's own helper MCP tools (fetch and
-// render), and Write/Edit calls targeting files the helper produced (a
-// registered data directory, or the report copy registered at report_path)
-// so annotating the report after a run needs no prompt either.
+// render), the other prompt source of a skill run that plugin-shipped
+// configuration can address.
 //
 // For every other caller the hook emits nothing ("no opinion"), leaving the
 // session's normal permission flow untouched.
@@ -55,20 +54,6 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 		return emitDecision(stdout, "allow",
 			"soundings: the plugin's own helper MCP tool is pre-approved")
 	}
-	// Writes and edits of the artifacts the helper produced - the report
-	// copy registered at report_path, anything inside a registered data
-	// directory - are pre-approved so annotating the report needs no
-	// prompt. Any caller qualifies (these calls come from the main
-	// session, before the risk-analyst gate below), but everything else
-	// gets no opinion: the hook confines the risk-analyst agent, never
-	// the main session.
-	if in.ToolName == "Write" || in.ToolName == "Edit" {
-		if isAllowedTarget(resolveForCheck(in.ToolInput.FilePath, in.CWD)) {
-			return emitDecision(stdout, "allow",
-				"soundings: write to a file the soundings helper produced")
-		}
-		return nil
-	}
 	// Exact match only: a namespaced risk-analyst from any other plugin
 	// ("otherplugin:risk-analyst") must not inherit this hook's approvals.
 	if in.AgentType != "risk-analyst" && in.AgentType != "soundings:risk-analyst" {
@@ -87,29 +72,15 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 	default:
 		return nil
 	}
-	if isAllowedTarget(resolveForCheck(path, in.CWD)) {
-		return emitDecision(stdout, "allow",
-			"soundings: read inside the registered fetch data directory")
+	target := resolveForCheck(path, in.CWD)
+	for _, dir := range allowedDirs() {
+		if underDir(target, dir) {
+			return emitDecision(stdout, "allow",
+				"soundings: read inside the registered fetch data directory")
+		}
 	}
 	return emitDecision(stdout, "deny", fmt.Sprintf(
 		"soundings: the risk-analyst agent may only read the fetch data directory registered for this run; %q is outside it", path))
-}
-
-// isAllowedTarget reports whether the resolved path is inside a registered
-// data directory or is exactly a registered file.
-func isAllowedTarget(target string) bool {
-	dirs, files := allowedTargets()
-	for _, f := range files {
-		if target == f {
-			return true
-		}
-	}
-	for _, dir := range dirs {
-		if underDir(target, dir) {
-			return true
-		}
-	}
-	return false
 }
 
 func emitDecision(stdout io.Writer, decision, reason string) error {

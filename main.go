@@ -618,8 +618,7 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 	// The helper writes the report itself so no agent needs a
 	// file-modification approval: always a copy in the data directory, and
 	// optionally the caller-chosen report_path (guarded - see
-	// writeReportCopy - and registered so later edits to it, e.g.
-	// annotating the report, are pre-approved by the hook).
+	// writeReportCopy).
 	if err := os.WriteFile(filepath.Join(dataDir, "report.md"), []byte(out), 0o644); err != nil {
 		return nil, nil, fmt.Errorf("saving report: %w", err)
 	}
@@ -648,8 +647,7 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 // itself produced.
 const reportBanner = "**⚠️ AI-Generated Report**"
 
-// writeReportCopy writes the rendered markdown to the caller-chosen path
-// and registers that file so the hook pre-approves later edits to it.
+// writeReportCopy writes the rendered markdown to the caller-chosen path.
 // The path is caller-controlled input to an auto-approved tool, so it is
 // constrained: it must be absolute (the helper does not run in the
 // session's working directory, so a relative path would land in the plugin
@@ -674,9 +672,6 @@ func writeReportCopy(path, content string) error {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("saving report copy: %w", err)
-	}
-	if err := registerFile(path); err != nil {
-		return fmt.Errorf("registering report copy for the confinement hook: %w", err)
 	}
 	return nil
 }

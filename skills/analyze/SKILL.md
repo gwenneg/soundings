@@ -86,13 +86,12 @@ Call the `render` tool from this plugin's helper MCP server
 Include `auto_deploy`, `review_required`, or `extra_guidance` only when
 the caller provided them.
 
-If the user wants the report saved as a file, pass `report_path` with an
-ABSOLUTE path ending in `.md` (e.g. `<working directory>/soundings-report.md`)
-— do not write the report yourself. The helper writes it (and always keeps
-`<fetch output directory>/report.md`), refusing to overwrite a file that is
-not a previously generated soundings report, and registers it so later
-edits to that file — e.g. annotating the report on request — need no
-approval.
+If the caller or user wants the report saved as a file, pass `report_path`
+with an ABSOLUTE path ending in `.md` (e.g.
+`<working directory>/soundings-report.md`) — do not write the report
+yourself. The helper writes it (and always keeps
+`<fetch output directory>/report.md`), refusing to overwrite a file that
+is not a previously generated soundings report.
 
 The report footer credits the model named inside the analysis JSON — the
 risk-analyst agent states its own identity there, and validation rejects

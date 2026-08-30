@@ -14,81 +14,27 @@ func TestRegisterAndDeregisterRoundTrip(t *testing.T) {
 	if err := registerDir(dir); err != nil {
 		t.Fatalf("registerDir: %v", err)
 	}
-	resolved, err := canonicalPath(dir)
+	resolved, err := canonicalDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dirs, _ := allowedTargets(); len(dirs) != 1 || dirs[0] != resolved {
-		t.Fatalf("allowedTargets() = %v, want [%s]", dirs, resolved)
+	if dirs := allowedDirs(); len(dirs) != 1 || dirs[0] != resolved {
+		t.Fatalf("allowedDirs() = %v, want [%s]", dirs, resolved)
 	}
 
 	// Re-registering the same dir must not duplicate it.
 	if err := registerDir(dir); err != nil {
 		t.Fatalf("registerDir (again): %v", err)
 	}
-	if dirs, _ := allowedTargets(); len(dirs) != 1 {
-		t.Fatalf("allowedTargets() after re-register = %v, want 1 entry", dirs)
+	if dirs := allowedDirs(); len(dirs) != 1 {
+		t.Fatalf("allowedDirs() after re-register = %v, want 1 entry", dirs)
 	}
 
 	if err := deregisterDir(dir); err != nil {
 		t.Fatalf("deregisterDir: %v", err)
 	}
-	if dirs, _ := allowedTargets(); len(dirs) != 0 {
-		t.Fatalf("allowedTargets() after deregister = %v, want empty", dirs)
-	}
-}
-
-func TestRegisterFileRoundTrip(t *testing.T) {
-	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
-	file := filepath.Join(t.TempDir(), "soundings-report.md")
-	if err := os.WriteFile(file, []byte("r"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := registerFile(file); err != nil {
-		t.Fatalf("registerFile: %v", err)
-	}
-	resolved, err := canonicalPath(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dirs, files := allowedTargets()
-	if len(dirs) != 0 {
-		t.Errorf("allowedTargets() dirs = %v, want empty", dirs)
-	}
-	if len(files) != 1 || files[0] != resolved {
-		t.Fatalf("allowedTargets() files = %v, want [%s]", files, resolved)
-	}
-
-	// A file entry whose path is gone is pruned.
-	if err := os.Remove(file); err != nil {
-		t.Fatal(err)
-	}
-	if _, files := allowedTargets(); len(files) != 0 {
-		t.Fatalf("allowedTargets() files after removal = %v, want empty", files)
-	}
-}
-
-func TestPruneDropsKindMismatch(t *testing.T) {
-	// An entry recorded as a file but pointing at a directory (or vice
-	// versa) is not honored.
-	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
-	dir, err := canonicalPath(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, err := registryPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := saveEntries(path, []registryEntry{
-		{Dir: dir, RegisteredAt: time.Now().UTC(), Kind: "file"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	dirs, files := allowedTargets()
-	if len(dirs) != 0 || len(files) != 0 {
-		t.Fatalf("allowedTargets() = (%v, %v), want empty (kind mismatch pruned)", dirs, files)
+	if dirs := allowedDirs(); len(dirs) != 0 {
+		t.Fatalf("allowedDirs() after deregister = %v, want empty", dirs)
 	}
 }
 
@@ -122,7 +68,7 @@ func TestAllowedDirsPrunesDeadAndExpiredEntries(t *testing.T) {
 	}
 
 	expired := t.TempDir()
-	expiredResolved, err := canonicalPath(expired)
+	expiredResolved, err := canonicalDir(expired)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +84,8 @@ func TestAllowedDirsPrunesDeadAndExpiredEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if dirs, _ := allowedTargets(); len(dirs) != 0 {
-		t.Fatalf("allowedTargets() = %v, want empty (dead and expired entries pruned)", dirs)
+	if dirs := allowedDirs(); len(dirs) != 0 {
+		t.Fatalf("allowedDirs() = %v, want empty (dead and expired entries pruned)", dirs)
 	}
 }
 
@@ -149,8 +95,8 @@ func TestAllowedDirsEmptyOnCorruptRegistry(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cache, "allowed-dirs.json"), []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if dirs, _ := allowedTargets(); len(dirs) != 0 {
-		t.Fatalf("allowedTargets() on corrupt registry = %v, want empty", dirs)
+	if dirs := allowedDirs(); len(dirs) != 0 {
+		t.Fatalf("allowedDirs() on corrupt registry = %v, want empty", dirs)
 	}
 }
 

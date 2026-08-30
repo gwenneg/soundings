@@ -77,7 +77,7 @@ type renderToolInput struct {
 	AutoDeploy     *int                 `json:"auto_deploy,omitempty" jsonschema:"score at or above which release is recommended (default 80)"`
 	ReviewRequired *int                 `json:"review_required,omitempty" jsonschema:"score at or above which manual review (instead of no-go) is recommended (default 60)"`
 	ExtraGuidance  []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
-	ReportPath     string               `json:"report_path,omitempty" jsonschema:"absolute path ending in .md to also write the rendered report to; an existing file is only overwritten if it is a previously generated soundings report. The file is registered so later edits to it (e.g. annotating the report) are pre-approved. The report is always saved to <data_dir>/report.md regardless"`
+	ReportPath     string               `json:"report_path,omitempty" jsonschema:"absolute path ending in .md to also write the rendered report to; an existing file is only overwritten if it is a previously generated soundings report. The report is always saved to <data_dir>/report.md regardless"`
 }
 
 func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInput) (*mcp.CallToolResult, *RenderResult, error) {
