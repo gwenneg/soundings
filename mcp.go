@@ -48,7 +48,7 @@ func runMCP() error {
 
 type fetchToolInput struct {
 	CompareURLs []string `json:"compare_urls" jsonschema:"GitHub/GitLab compare URLs to analyze together; mixed platforms and hosts allowed"`
-	OutDir      string   `json:"out_dir,omitempty" jsonschema:"directory for index.json, patches/ and docs/; a temporary directory is created when omitted. A custom directory must keep a path component starting with soundings- or the read-confinement hook will deny the risk-analyst stage's reads"`
+	OutDir      string   `json:"out_dir,omitempty" jsonschema:"directory for index.json, patches/ and docs/; a temporary directory is created when omitted. Custom or default, the directory is registered for the risk-analyst read-confinement hook, which approves reads inside it and denies reads anywhere else"`
 }
 
 func fetchTool(ctx context.Context, req *mcp.CallToolRequest, in fetchToolInput) (*mcp.CallToolResult, *FetchSummary, error) {
@@ -71,11 +71,11 @@ func fetchTool(ctx context.Context, req *mcp.CallToolRequest, in fetchToolInput)
 }
 
 type renderToolInput struct {
-	AnalysisJSON     string               `json:"analysis_json" jsonschema:"the structured analysis JSON produced by the risk-analyst stage, passed verbatim"`
-	DataDir          string               `json:"data_dir" jsonschema:"the fetch output directory containing index.json"`
-	AutoDeploy       *int                 `json:"auto_deploy,omitempty" jsonschema:"score at or above which release is recommended (default 80)"`
-	ReviewRequired   *int                 `json:"review_required,omitempty" jsonschema:"score at or above which manual review (instead of no-go) is recommended (default 60)"`
-	ExtraGuidance    []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
+	AnalysisJSON   string               `json:"analysis_json" jsonschema:"the structured analysis JSON produced by the risk-analyst stage, passed verbatim"`
+	DataDir        string               `json:"data_dir" jsonschema:"the fetch output directory containing index.json"`
+	AutoDeploy     *int                 `json:"auto_deploy,omitempty" jsonschema:"score at or above which release is recommended (default 80)"`
+	ReviewRequired *int                 `json:"review_required,omitempty" jsonschema:"score at or above which manual review (instead of no-go) is recommended (default 60)"`
+	ExtraGuidance  []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
 }
 
 func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInput) (*mcp.CallToolResult, *RenderResult, error) {

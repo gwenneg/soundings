@@ -5,22 +5,31 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 )
 
 // runHook implements the PreToolUse confinement hook for the risk-analyst
-// agent: deny any Read, Grep, or Glob outside the soundings fetch output
-// directory. The risk-analyst agent reads externally-authored content, so
-// an injection inside a diff could otherwise steer it to read or search
-// secrets elsewhere on disk (~/.ssh, .env files) and leak them into the
-// analysis it returns. The agent's frontmatter already limits it to
-// Read/Grep/Glob; this hook limits where those tools may point. For every
-// other caller the hook emits nothing ("no opinion"), leaving the
+// agent: allow Read, Grep, and Glob inside the fetch output directories
+// registered by this binary (see registry.go), deny them everywhere else.
+// The risk-analyst agent reads externally-authored content, so an injection
+// inside a diff could otherwise steer it to read or search secrets elsewhere
+// on disk (~/.ssh, .env files) and leak them into the analysis it returns.
+// The agent's frontmatter already limits it to Read/Grep/Glob; this hook
+// limits where those tools may point.
+//
+// The explicit "allow" also skips the interactive permission prompt for
+// in-bounds reads (the fetch directory lives outside the session's working
+// directory, where reads would otherwise prompt), so the isolated stage
+// runs without user interaction. Deny and ask rules from the user's
+// settings still apply regardless of the allow - the hook can only remove
+// the prompt, not override a configured deny.
+//
+// For every other caller the hook emits nothing ("no opinion"), leaving the
 // session's normal permission flow untouched.
 func runHook(stdin io.Reader, stdout io.Writer) error {
 	var in struct {
 		ToolName  string `json:"tool_name"`
 		AgentType string `json:"agent_type"` // set only for subagent calls; "soundings:risk-analyst" when installed as a plugin
+		CWD       string `json:"cwd"`
 		ToolInput struct {
 			FilePath string `json:"file_path"` // Read
 			Path     string `json:"path"`      // Grep, Glob
@@ -29,8 +38,9 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 	if err := json.NewDecoder(stdin).Decode(&in); err != nil {
 		return fmt.Errorf("parsing hook input: %w", err)
 	}
-	riskAnalyst := in.AgentType == "risk-analyst" || strings.HasSuffix(in.AgentType, ":risk-analyst")
-	if !riskAnalyst {
+	// Exact match only: a namespaced risk-analyst from any other plugin
+	// ("otherplugin:risk-analyst") must not inherit this hook's approvals.
+	if in.AgentType != "risk-analyst" && in.AgentType != "soundings:risk-analyst" {
 		return nil
 	}
 	var path string
@@ -46,33 +56,55 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 	default:
 		return nil
 	}
-	// Allowed: a path component starting with "soundings-" (the prefix of
-	// every fetch output directory) and no ".." path segment - the index
-	// hands the agent absolute paths, so traversal is never legitimate.
-	// Checked segment-by-segment (not via strings.Contains) because slugified
-	// directory names can legitimately contain a literal ".." substring, e.g.
-	// GitHub compare-range slugs like "sha1...sha2".
-	path = filepath.ToSlash(path)
-	if strings.Contains("/"+path, "/soundings-") && !hasDotDotSegment(path) {
-		return nil
+	target := resolveForCheck(path, in.CWD)
+	for _, dir := range allowedDirs() {
+		if underDir(target, dir) {
+			return emitDecision(stdout, "allow",
+				"soundings: read inside the registered fetch data directory")
+		}
 	}
+	return emitDecision(stdout, "deny", fmt.Sprintf(
+		"soundings: the risk-analyst agent may only read the fetch data directory registered for this run; %q is outside it", path))
+}
+
+func emitDecision(stdout io.Writer, decision, reason string) error {
 	return json.NewEncoder(stdout).Encode(map[string]any{
 		"hookSpecificOutput": map[string]any{
-			"hookEventName":      "PreToolUse",
-			"permissionDecision": "deny",
-			"permissionDecisionReason": fmt.Sprintf(
-				"soundings: the risk-analyst agent may only read the fetched soundings-* data directory; %q is outside it", path),
+			"hookEventName":            "PreToolUse",
+			"permissionDecision":       decision,
+			"permissionDecisionReason": reason,
 		},
 	})
 }
 
-// hasDotDotSegment reports whether path contains a ".." path segment, as
-// opposed to a ".." substring inside a longer segment (e.g. "sha1...sha2").
-func hasDotDotSegment(path string) bool {
-	for _, part := range strings.Split(path, "/") {
-		if part == ".." {
-			return true
-		}
+// resolveForCheck turns the tool-call path into the absolute, cleaned,
+// symlink-resolved form that registry entries use, so neither a relative
+// path, a ".." segment, nor a symlink inside an allowed directory can
+// disguise a target outside it. An empty or unresolvable path resolves to
+// something outside every registered directory and is therefore denied.
+func resolveForCheck(path, cwd string) string {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(cwd, path)
 	}
-	return false
+	return resolveExisting(filepath.Clean(path))
+}
+
+// resolveExisting resolves symlinks on the deepest existing ancestor of p
+// and reattaches the non-existent remainder, so paths whose final elements
+// don't exist yet (a Glob pattern, a not-yet-written file) still resolve
+// through any symlinked parents.
+func resolveExisting(p string) string {
+	rest := ""
+	for {
+		resolved, err := filepath.EvalSymlinks(p)
+		if err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return filepath.Join(p, rest)
+		}
+		rest = filepath.Join(filepath.Base(p), rest)
+		p = parent
+	}
 }

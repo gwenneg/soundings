@@ -13,7 +13,9 @@
 //
 // With the single argument "hook" it instead runs as a Claude Code
 // PreToolUse hook that confines the risk-analyst agent's Read, Grep, and
-// Glob tools to the fetch output directory (see hook.go).
+// Glob tools to the fetch output directories registered by fetch, approving
+// in-bounds reads (no permission prompt) and denying everything else (see
+// hook.go and registry.go).
 package main
 
 import (
@@ -42,7 +44,7 @@ import (
 )
 
 // pluginVersion mirrors .claude-plugin/plugin.json; bump both together.
-const pluginVersion = "0.2.6"
+const pluginVersion = "0.3.0"
 
 func main() {
 	initLogging()
@@ -339,6 +341,13 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 		return nil, err
 	}
 
+	// Authorize the output directory for the risk-analyst agent's reads
+	// (see registry.go). Failing the fetch here beats succeeding and having
+	// every read of the isolated stage denied later with no obvious cause.
+	if err := registerDir(outDir); err != nil {
+		return nil, fmt.Errorf("registering fetch directory for the read-confinement hook: %w", err)
+	}
+
 	slog.Info("Fetch complete", "repos", len(index.Repos), "guidance", len(guidance), "docs", len(index.Docs))
 
 	summary := &FetchSummary{IndexPath: indexPath, GuidanceCount: len(guidance)}
@@ -590,6 +599,15 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 	})
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// The run is over: withdraw the risk-analyst agent's authorization for
+	// this data directory. Only on success - a validation failure above
+	// means the retry loop still needs to re-read the directory. Failure to
+	// deregister is not worth failing a produced report over; the registry's
+	// TTL prune cleans up eventually.
+	if err := deregisterDir(dataDir); err != nil {
+		slog.Warn("Failed to deregister fetch directory", "dir", dataDir, "error", err)
 	}
 
 	slog.Info("Render complete", "score", score)
