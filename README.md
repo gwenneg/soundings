@@ -111,22 +111,16 @@ advisory.
 
 ## Running without permission prompts
 
-The read-confinement hook already pre-approves the risk-analyst stage's
-reads, so a run has two remaining prompt sources. The helper MCP tools
-prompt like any MCP tool; plugins cannot ship permission rules, so allow
-them once in your own settings (or answer "Yes, and don't ask again" on the
-first prompt, which saves the equivalent rule per repository):
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "mcp__plugin_soundings_helper__fetch",
-      "mcp__plugin_soundings_helper__render"
-    ]
-  }
-}
-```
+The bundled PreToolUse hook pre-approves both prompt sources a skill run
+would otherwise have: the risk-analyst stage's reads inside the registered
+fetch directory, and the plugin's own helper MCP tools (`fetch` and
+`render`). The skill's `allowed-tools` frontmatter constrains what the turn
+may use but is not a permission grant, and a plugin cannot ship permission
+rules - the hook's explicit allow is the plugin-side mechanism that skips
+the prompt. User-configured deny and ask rules always override it. If you
+run with the plugin's hooks disabled, the equivalent settings rules are
+`mcp__plugin_soundings_helper__fetch` and
+`mcp__plugin_soundings_helper__render` in `permissions.allow`.
 
 The one remaining prompt is the orchestrator writing the analysis JSON to
 disk (a file-modification prompt, kept for the validation retry loop).

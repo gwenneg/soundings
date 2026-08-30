@@ -9,6 +9,15 @@
             "command": "go -C ${CLAUDE_PLUGIN_ROOT} run . hook"
           }
         ]
+      },
+      {
+        "matcher": "mcp__plugin_soundings_helper__fetch|mcp__plugin_soundings_helper__render",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "go -C ${CLAUDE_PLUGIN_ROOT} run . hook"
+          }
+        ]
       }
     ]
   }
