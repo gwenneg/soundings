@@ -44,7 +44,7 @@ import (
 )
 
 // pluginVersion mirrors .claude-plugin/plugin.json; bump both together.
-const pluginVersion = "0.3.1"
+const pluginVersion = "0.4.0"
 
 func main() {
 	initLogging()
@@ -522,6 +522,11 @@ type renderOpts struct {
 	AutoDeploy     int
 	ReviewRequired int
 	ExtraGuidance  []extraGuidanceEntry
+
+	// ReportPath, when set, is an additional caller-chosen location the
+	// rendered markdown is written to (see writeReportCopy for the
+	// constraints). The report is always saved to <data_dir>/report.md.
+	ReportPath string
 }
 
 // RenderResult is the successful outcome of a render.
@@ -548,6 +553,15 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 	// even if redaction damages the JSON (that fails validation instead).
 	analysisJSON := report.StripMarkdownCodeBlocks(analysisRaw)
 	analysisJSON, _ = report.RedactSecrets(analysisJSON)
+
+	// Persist the exact bytes validation sees - before validating, so a
+	// failed validation leaves the analysis on disk for the retry loop to
+	// point the risk-analyst agent at. The helper doing this write (rather
+	// than the orchestrating agent using its Write tool) keeps the run free
+	// of file-modification permission prompts.
+	if err := os.WriteFile(filepath.Join(dataDir, "analysis.json"), []byte(analysisJSON), 0o644); err != nil {
+		return nil, nil, fmt.Errorf("saving analysis: %w", err)
+	}
 	if errs := validateAnalysis([]byte(analysisJSON)); len(errs) > 0 {
 		return nil, errs, nil
 	}
@@ -601,6 +615,19 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		return nil, nil, err
 	}
 
+	// The helper writes the report itself so no agent needs a
+	// file-modification approval: always a copy in the data directory, and
+	// optionally the caller-chosen report_path (guarded - see
+	// writeReportCopy).
+	if err := os.WriteFile(filepath.Join(dataDir, "report.md"), []byte(out), 0o644); err != nil {
+		return nil, nil, fmt.Errorf("saving report: %w", err)
+	}
+	if opts.ReportPath != "" {
+		if err := writeReportCopy(opts.ReportPath, out); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	// The run is over: withdraw the risk-analyst agent's authorization for
 	// this data directory. Only on success - a validation failure above
 	// means the retry loop still needs to re-read the directory. Failure to
@@ -613,6 +640,40 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 	slog.Info("Render complete", "score", score)
 
 	return &RenderResult{Score: score, ReportMarkdown: out}, nil, nil
+}
+
+// reportBanner is the first line of every rendered report (from
+// report_template.md). writeReportCopy uses it to recognize files soundings
+// itself produced.
+const reportBanner = "**⚠️ AI-Generated Report**"
+
+// writeReportCopy writes the rendered markdown to the caller-chosen path.
+// The path is caller-controlled input to an auto-approved tool, so it is
+// constrained: it must be absolute (the helper does not run in the
+// session's working directory, so a relative path would land in the plugin
+// root), must end in .md, and an existing file is only overwritten when it
+// is a previously generated soundings report - the tool cannot be steered
+// into clobbering an arbitrary file.
+func writeReportCopy(path, content string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("report_path must be an absolute path, got %q", path)
+	}
+	if filepath.Ext(path) != ".md" {
+		return fmt.Errorf("report_path must end in .md, got %q", path)
+	}
+	existing, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if !strings.HasPrefix(string(existing), reportBanner) {
+			return fmt.Errorf("refusing to overwrite %q: it exists and is not a previously generated soundings report", path)
+		}
+	case !os.IsNotExist(err):
+		return fmt.Errorf("checking report_path: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("saving report copy: %w", err)
+	}
+	return nil
 }
 
 // reconstruct rebuilds the renderer's view (comparisons without patch bodies,

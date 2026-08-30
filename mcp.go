@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -76,6 +77,7 @@ type renderToolInput struct {
 	AutoDeploy     *int                 `json:"auto_deploy,omitempty" jsonschema:"score at or above which release is recommended (default 80)"`
 	ReviewRequired *int                 `json:"review_required,omitempty" jsonschema:"score at or above which manual review (instead of no-go) is recommended (default 60)"`
 	ExtraGuidance  []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
+	ReportPath     string               `json:"report_path,omitempty" jsonschema:"absolute path ending in .md to also write the rendered report to; an existing file is only overwritten if it is a previously generated soundings report. The report is always saved to <data_dir>/report.md regardless"`
 }
 
 func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInput) (*mcp.CallToolResult, *RenderResult, error) {
@@ -86,6 +88,7 @@ func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInpu
 		AutoDeploy:     80,
 		ReviewRequired: 60,
 		ExtraGuidance:  in.ExtraGuidance,
+		ReportPath:     in.ReportPath,
 	}
 	if in.AutoDeploy != nil {
 		opts.AutoDeploy = *in.AutoDeploy
@@ -99,7 +102,8 @@ func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInpu
 		return nil, nil, err
 	}
 	if len(validationErrs) > 0 {
-		return nil, nil, fmt.Errorf("analysis JSON failed validation; correct these fields and re-run the analysis:\n  - %s",
+		return nil, nil, fmt.Errorf("analysis JSON failed validation; the analysis as received is saved at %s; correct these fields and re-run the analysis:\n  - %s",
+			filepath.Join(in.DataDir, "analysis.json"),
 			strings.Join(validationErrs, "\n  - "))
 	}
 	return nil, result, nil
