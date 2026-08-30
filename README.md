@@ -44,9 +44,10 @@ repository documentation — is externally authored and treated as untrusted:
   checks covering redirects and DNS rebinding), and strips the GitLab token
   on any redirect that leaves the trusted host.
 - **Reading is isolated.** The fetched content is read and assessed by a
-  dedicated subagent (`assess`) whose only tool is Read — no shell, no
-  network, no writes — so a prompt injection inside a diff can at most skew
-  the analysis text it returns, not drive tools in your session.
+  dedicated subagent (`risk-analyst`) restricted to read-only tools (Read,
+  Grep, Glob) — no shell, no network, no writes — so a prompt injection
+  inside a diff can at most skew the analysis text it returns, not drive
+  tools in your session.
 - **The verdict is computed, not written.** The renderer derives the
   recommendation banner from the numeric score and thresholds, validates
   the analysis against a schema, and escapes externally-authored text in
@@ -56,20 +57,20 @@ repository documentation — is externally authored and treated as untrusted:
   secret that slips into the assessment never reaches the report.
 
 - **Reads are confined, not just read-only.** The plugin bundles a
-  PreToolUse hook (`go run . hook`) that denies any Read by the assess
-  agent outside the fetched data directory, so injected content cannot
-  steer it into reading secrets elsewhere on disk (`~/.ssh`, `.env`
-  files) and leaking them into the analysis. Whether plugin-bundled
-  hooks fire inside subagents is not yet documented behavior; to make
-  the confinement unconditional, register the same hook in your own
-  settings:
+  PreToolUse hook (`go run . hook`) that denies any Read, Grep, or Glob by
+  the risk-analyst agent outside the fetched data directory, so injected
+  content cannot steer it into reading or searching secrets elsewhere on
+  disk (`~/.ssh`, `.env` files) and leaking them into the analysis.
+  Whether plugin-bundled hooks fire inside subagents is not yet
+  documented behavior; to make the confinement unconditional, register
+  the same hook in your own settings:
 
   ```json
   {
     "hooks": {
       "PreToolUse": [
         {
-          "matcher": "Read",
+          "matcher": "Read|Grep|Glob",
           "hooks": [
             { "type": "command",
               "command": "go -C <path-to-soundings> run . hook" }

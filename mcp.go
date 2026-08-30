@@ -30,7 +30,7 @@ func runMCP() error {
 			"commits, diffs, PR/MR metadata, authorized reviewer guidance, and repository " +
 			"documentation (SSRF-hardened). Auth is resolved per platform and per host " +
 			"(GITHUB_TOKEN / gh auth token, GITLAB_TOKEN / glab auth token). Patches and " +
-			"docs are written to disk for the read-only assessment stage; the result " +
+			"docs are written to disk for the read-only analysis stage; the result " +
 			"contains only counts and paths, never fetched content.",
 	}, fetchTool)
 
@@ -38,8 +38,8 @@ func runMCP() error {
 		Name: "render",
 		Description: "Validate a structured release analysis JSON and render the final " +
 			"markdown report. The analysis must contain the model field stated by the " +
-			"assessing agent; validation failures are returned as field-level errors so " +
-			"the assessment can be corrected and re-run. The recommendation banner is " +
+			"risk-analyst agent; validation failures are returned as field-level errors so " +
+			"the analysis can be corrected and re-run. The recommendation banner is " +
 			"computed from the score and thresholds, never from analysis prose.",
 	}, renderTool)
 
@@ -48,7 +48,7 @@ func runMCP() error {
 
 type fetchToolInput struct {
 	CompareURLs []string `json:"compare_urls" jsonschema:"GitHub/GitLab compare URLs to analyze together; mixed platforms and hosts allowed"`
-	OutDir      string   `json:"out_dir,omitempty" jsonschema:"directory for index.json, patches/ and docs/; a temporary directory is created when omitted. A custom directory must keep a path component starting with soundings- or the read-confinement hook will deny the assessment stage's reads"`
+	OutDir      string   `json:"out_dir,omitempty" jsonschema:"directory for index.json, patches/ and docs/; a temporary directory is created when omitted. A custom directory must keep a path component starting with soundings- or the read-confinement hook will deny the risk-analyst stage's reads"`
 }
 
 func fetchTool(ctx context.Context, req *mcp.CallToolRequest, in fetchToolInput) (*mcp.CallToolResult, *FetchSummary, error) {
@@ -71,7 +71,7 @@ func fetchTool(ctx context.Context, req *mcp.CallToolRequest, in fetchToolInput)
 }
 
 type renderToolInput struct {
-	AnalysisJSON     string               `json:"analysis_json" jsonschema:"the structured analysis JSON produced by the assessment stage, passed verbatim"`
+	AnalysisJSON     string               `json:"analysis_json" jsonschema:"the structured analysis JSON produced by the risk-analyst stage, passed verbatim"`
 	DataDir          string               `json:"data_dir" jsonschema:"the fetch output directory containing index.json"`
 	AutoDeploy       *int                 `json:"auto_deploy,omitempty" jsonschema:"score at or above which release is recommended (default 80)"`
 	ReviewRequired   *int                 `json:"review_required,omitempty" jsonschema:"score at or above which manual review (instead of no-go) is recommended (default 60)"`
@@ -99,7 +99,7 @@ func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInpu
 		return nil, nil, err
 	}
 	if len(validationErrs) > 0 {
-		return nil, nil, fmt.Errorf("analysis JSON failed validation; correct these fields and re-run the assessment:\n  - %s",
+		return nil, nil, fmt.Errorf("analysis JSON failed validation; correct these fields and re-run the analysis:\n  - %s",
 			strings.Join(validationErrs, "\n  - "))
 	}
 	return nil, result, nil

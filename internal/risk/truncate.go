@@ -8,7 +8,7 @@ import (
 // truncateThreshold maps a risk tier to the patch line count above which
 // its patches get truncated. Critical-risk files (auth, DB, API contracts)
 // have no entry: they are never truncated, however large, since the
-// assessing agent always needs full visibility into them. Thresholds get
+// risk-analyst agent always needs full visibility into them. Thresholds get
 // tighter down the tier ladder because lower-risk files (generated code,
 // vendored bundles, lockfiles) rarely need full visibility even when huge.
 var truncateThreshold = map[string]int{

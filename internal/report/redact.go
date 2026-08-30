@@ -34,7 +34,7 @@ var secretPatterns = []struct {
 
 // RedactSecrets replaces recognizable credentials in s with
 // [REDACTED:<kind>] markers and reports how many were replaced. The
-// assess agent is instructed never to include secrets in its analysis,
+// risk-analyst agent is instructed never to include secrets in its analysis,
 // but that instruction is advisory and its input is externally authored;
 // this pass makes the report side of that promise deterministic. The
 // replacement text is safe inside a JSON string, so redacting the raw
