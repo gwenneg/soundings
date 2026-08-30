@@ -21,6 +21,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -43,8 +44,22 @@ import (
 	"github.com/gwenneg/soundings/internal/risk"
 )
 
-// pluginVersion mirrors .claude-plugin/plugin.json; bump both together.
-const pluginVersion = "0.4.0"
+// pluginManifest embeds the plugin manifest so the version has a single
+// source of truth: .claude-plugin/plugin.json.
+//
+//go:embed all:.claude-plugin/plugin.json
+var pluginManifest []byte
+
+// pluginVersion is read from the embedded manifest at startup.
+var pluginVersion = func() string {
+	var m struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(pluginManifest, &m); err != nil || m.Version == "" {
+		return "unknown"
+	}
+	return m.Version
+}()
 
 func main() {
 	initLogging()

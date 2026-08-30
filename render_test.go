@@ -130,3 +130,9 @@ func TestWriteReportCopyGuards(t *testing.T) {
 		t.Error("existing non-report file must be left untouched")
 	}
 }
+
+func TestPluginVersionFromManifest(t *testing.T) {
+	if pluginVersion == "unknown" || pluginVersion == "" {
+		t.Fatalf("pluginVersion = %q: the embedded .claude-plugin/plugin.json did not yield a version", pluginVersion)
+	}
+}
