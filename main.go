@@ -4,7 +4,7 @@
 //	fetch   Fetches commits, diffs, PR/MR metadata, authorized guidance, and
 //	        repository documentation for one or more GitHub/GitLab compare
 //	        URLs. Writes per-file patches and docs to disk and returns a
-//	        summary of counts and paths; the read-only assessment stage
+//	        summary of counts and paths; the read-only analysis stage
 //	        opens the content selectively.
 //
 //	render  Validates the structured analysis JSON (field-level errors on
@@ -12,8 +12,8 @@
 //	        recommendation banner from the score and thresholds.
 //
 // With the single argument "hook" it instead runs as a Claude Code
-// PreToolUse hook that confines the assess agent's Read tool to the fetch
-// output directory (see hook.go).
+// PreToolUse hook that confines the risk-analyst agent's Read, Grep, and
+// Glob tools to the fetch output directory (see hook.go).
 package main
 
 import (
@@ -98,7 +98,7 @@ type Index struct {
 }
 
 // IndexGuidance is user guidance as embedded in index.json, the file the
-// isolated assess agent reads. It is deliberately authorized-only and has
+// isolated risk-analyst agent reads. It is deliberately authorized-only and has
 // no is_authorized field: unauthorized guidance is excluded entirely
 // rather than redacted in place, so neither its content nor any other of
 // its fields (e.g. a deliberately provocative author name) ever reach the
@@ -329,8 +329,8 @@ func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 
 	// guidance.json carries the full, unfiltered guidance list (including
 	// unauthorized entries) for the render step's transparency table. It is
-	// never referenced by assess.md and is not part of what the isolated
-	// assess agent is instructed to read.
+	// never referenced by risk-analyst.md and is not part of what the isolated
+	// risk-analyst agent is instructed to read.
 	guidanceData, err := json.MarshalIndent(guidance, "", "  ")
 	if err != nil {
 		return nil, err
@@ -524,7 +524,7 @@ type RenderResult struct {
 // doRender is the core of the render operation, shared by the CLI and the
 // MCP server. It returns (nil, validationErrors, nil) when the analysis
 // fails schema validation - the caller relays the field-level errors so the
-// assessment can be corrected and re-run.
+// analysis can be corrected and re-run.
 func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []string, error) {
 	if opts.AutoDeploy < 0 || opts.AutoDeploy > 100 || opts.ReviewRequired < 0 || opts.ReviewRequired > 100 {
 		return nil, nil, fmt.Errorf("auto-deploy and review-required thresholds must be between 0 and 100")
@@ -646,7 +646,7 @@ func reconstruct(index *Index) ([]*types.Comparison, []*types.Documentation, err
 }
 
 // authorizedIndexGuidance filters guidance down to authorized entries for
-// embedding in index.json, the file the isolated assess agent reads.
+// embedding in index.json, the file the isolated risk-analyst agent reads.
 // Unauthorized guidance is excluded entirely rather than redacted in
 // place: the agent has no legitimate use for it, and dropping the whole
 // entry - not just its content - keeps every field (including a
@@ -743,7 +743,7 @@ func validateAnalysis(data []byte) []string {
 		return []string{"trailing content after the JSON object: the file must contain exactly one JSON object and nothing else"}
 	}
 	if strings.TrimSpace(a.Model) == "" {
-		errs = append(errs, "model: required - state the exact model identifier that produced this analysis (the assess agent's own identity)")
+		errs = append(errs, "model: required - state the exact model identifier that produced this analysis (the risk-analyst agent's own identity)")
 	}
 	if a.Score < 0 || a.Score > 100 {
 		errs = append(errs, fmt.Sprintf("score: must be 0-100, got %d", a.Score))
@@ -760,7 +760,7 @@ func validateAnalysis(data []byte) []string {
 		}
 	}
 	if strings.TrimSpace(a.DocumentationQuality) == "" {
-		errs = append(errs, "documentation_quality: required (assess documentation completeness; say so if none was found)")
+		errs = append(errs, "documentation_quality: required (evaluate documentation completeness; say so if none was found)")
 	}
 	return errs
 }
