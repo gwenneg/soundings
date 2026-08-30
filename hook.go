@@ -23,6 +23,10 @@ import (
 // settings still apply regardless of the allow - the hook can only remove
 // the prompt, not override a configured deny.
 //
+// The hook also pre-approves this plugin's own helper MCP tools (fetch and
+// render), the other prompt source of a skill run that plugin-shipped
+// configuration can address.
+//
 // For every other caller the hook emits nothing ("no opinion"), leaving the
 // session's normal permission flow untouched.
 func runHook(stdin io.Reader, stdout io.Writer) error {
@@ -37,6 +41,18 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 	}
 	if err := json.NewDecoder(stdin).Decode(&in); err != nil {
 		return fmt.Errorf("parsing hook input: %w", err)
+	}
+	// This plugin's own helper MCP tools are pre-approved: the skill's
+	// allowed-tools frontmatter constrains what the turn may use but is not
+	// a permission grant, so without this the fetch and render calls prompt
+	// like any MCP tool - and a plugin cannot ship permission rules. These
+	// calls come from the main session (no agent_type), so this check runs
+	// before the risk-analyst gate below. User-configured deny and ask
+	// rules still apply regardless of the allow.
+	if in.ToolName == "mcp__plugin_soundings_helper__fetch" ||
+		in.ToolName == "mcp__plugin_soundings_helper__render" {
+		return emitDecision(stdout, "allow",
+			"soundings: the plugin's own helper MCP tool is pre-approved")
 	}
 	// Exact match only: a namespaced risk-analyst from any other plugin
 	// ("otherplugin:risk-analyst") must not inherit this hook's approvals.
