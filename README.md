@@ -2,20 +2,106 @@
 
 **Take soundings before you ship.**
 
-Soundings is a Claude Code plugin that analyzes code changes — one or more
-GitHub/GitLab compare URLs — and produces a release confidence score (0–100)
-with a comprehensive, actionable risk report: categorized concerns, compound-risk
-detection across repositories, and actionable action items.
+Sailors have long measured the water's [depth](https://en.wikipedia.org/wiki/Depth_sounding)
+ahead before committing a ship to a course. Soundings does the same for a
+release: point it at one or more GitHub/GitLab compare URLs and it reads
+the diffs, commit history, and reviewer discussion, then hands back a
+release confidence score (0–100) and a report specific enough to act on —
+named files, named functions, concrete commands to run before you ship.
 
 ```
 /soundings:analyze https://github.com/org/repo/compare/v1.0...v1.1
 ```
 
-The agent running the skill does the analysis itself — there is no external
-LLM API to configure, no service-account key, and no Docker image. A small Go
-helper (invoked via `go run`, no installation) handles the deterministic work:
-fetching diffs and commit/PR metadata, extracting authorized reviewer guidance,
-risk-tiering changed files, and rendering the final report.
+**No external LLM API, no service-account key, no Docker image.** The
+Claude Code agent already in your session does the analysis; a small Go
+helper (invoked via `go run`, nothing to install) handles the deterministic
+work — fetching diffs and commit/PR metadata, extracting authorized
+reviewer guidance, risk-tiering changed files, and rendering the report.
+Nothing about a run leaves your machine except the requests you'd make
+anyway to fetch the diff.
+
+## Why Soundings
+
+- **Multi-repo by design.** Pass several compare URLs from a coordinated,
+  multi-service deployment in one invocation and it analyzes them
+  together — catching the compound risk a per-repo CI check can't see
+  (e.g. a client contract change on one side with no corresponding update
+  on the other).
+- **Reads with judgment, not a fixed diff limit.** Every changed file is
+  risk-tiered (database/auth/API contracts are always read in full;
+  low-risk files are skimmed) so large diffs get proportionate attention
+  instead of being truncated blind or blowing the context budget.
+- **Specific, not generic.** Reports cite the actual file, function, and
+  line at issue and turn concerns into action items sorted by urgency —
+  not a rubber-stamped "looks fine."
+- **Gets better with your input.** A `.soundings-docs.md` file teaches it
+  your service's criticality and known risk areas; a `/soundings note`
+  comment on the PR/MR hands it context it can't infer from a diff alone.
+  See the [analysis guide](docs/IMPROVING_ANALYSIS.md).
+- **Built to be run unattended, safely.** It ingests diffs and PR/MR
+  comments — text written by whoever opened the change — so every stage
+  is scoped as if that text were hostile. See [Security model](#security-model).
+
+## Example
+
+<details>
+<summary>Sample output (abridged)</summary>
+
+```markdown
+# 🚀 Release Confidence Report
+
+## 🎯 Summary
+
+**Confidence score:** 72/100
+**Recommendation:** ⚠️ MANUAL REVIEW REQUIRED
+
+A well-tested rate-limiter change, but the new retry logic in the payment
+webhook handler has no test covering the exponential-backoff cap.
+
+## 🔍 Risk Analysis
+
+### Concerns
+| | Details |
+|---|---|
+| ⚠️ | `internal/webhook/retry.go` raises the max retry count from 3 to 8 with no ceiling on total wall-clock time — a stalled downstream dependency could hold a webhook worker for over 4 minutes. No test exercises the new upper bound. |
+| 🟡 | `config/rate_limits.yaml` doubles the per-tenant burst limit; no corresponding change to the load-test fixtures that assert on it. |
+
+### Positive Factors
+- Rate limiter change is covered by 6 new table-driven test cases.
+- Dependency bumps are all patch-level, dependabot-authored.
+
+## 📋 Action Items
+
+### 🔥 Critical (Complete Before Release)
+- Add a test asserting `retry.go`'s total backoff time is capped, and pick
+  a cap value with the on-call team.
+```
+
+</details>
+
+Full reports go further: a technical-details appendix listing what was
+read in full versus skimmed, a changelog table per repository, and a
+documentation-quality assessment — all in one Markdown file you can post
+back to the PR/MR or keep locally.
+
+## Install
+
+Soundings is distributed through the
+[claude-ichiba](https://github.com/gwenneg/claude-ichiba) marketplace —
+no cloning or file editing. In Claude Code:
+
+```
+/plugin marketplace add gwenneg/claude-ichiba
+/plugin install soundings@claude-ichiba
+/reload-plugins
+```
+
+## Requirements
+
+- [Claude Code](https://claude.com/claude-code)
+- A Go toolchain (`brew install go`)
+- `gh` and/or `glab` authenticated (or `GITHUB_TOKEN` / `GITLAB_TOKEN` set)
 
 ## Helper MCP server
 
@@ -26,15 +112,9 @@ called, and it can be toggled off in the `/mcp` panel. For containerized
 headless use, build the binary into the image and point the MCP server
 config at it instead of `go run`.
 
-## Requirements
-
-- [Claude Code](https://claude.com/claude-code)
-- A Go toolchain (`brew install go`)
-- `gh` and/or `glab` authenticated (or `GITHUB_TOKEN` / `GITLAB_TOKEN` set)
-
 ## Security model
 
-Everything soundings analyzes — diffs, commit messages, PR/MR comments,
+Everything Soundings analyzes — diffs, commit messages, PR/MR comments,
 repository documentation — is externally authored and treated as untrusted:
 
 - **Fetching is code, not agent tool use.** A Go helper is the only
@@ -55,7 +135,6 @@ repository documentation — is externally authored and treated as untrusted:
   structure. Recognizable credentials (platform tokens, cloud keys, PEM
   blocks, JWTs) are redacted from the analysis before validation, so a
   secret that slips into the assessment never reaches the report.
-
 - **Reads are confined, not just read-only.** The plugin bundles a
   PreToolUse hook (`go run . hook`) backed by a registry of the exact
   output directories the fetch step created (a per-user file under the OS
@@ -68,9 +147,10 @@ repository documentation — is externally authored and treated as untrusted:
   runs expire from the registry after 24 hours. Every registry failure
   reads as "not registered" and denies — it fails closed. User-configured
   deny rules always override the hook's approval.
-  Whether plugin-bundled hooks fire inside subagents is not yet
-  documented behavior; to make the confinement unconditional, register
-  the same hook in your own settings:
+
+  Whether plugin-bundled hooks fire inside subagents is not yet documented
+  behavior; to make the confinement unconditional, register the same hook
+  in your own settings:
 
   ```json
   {
@@ -88,22 +168,22 @@ repository documentation — is externally authored and treated as untrusted:
   }
   ```
 
-As a coarse second net independent of soundings, harness-enforced deny
-rules in `settings.json` keep high-value secret paths unreadable for the
-whole session, subagents included — deny rules always beat allow rules:
+  As a coarse second net independent of Soundings, harness-enforced deny
+  rules in `settings.json` keep high-value secret paths unreadable for the
+  whole session, subagents included — deny rules always beat allow rules:
 
-```json
-{
-  "permissions": {
-    "deny": [
-      "Read(~/.ssh/**)",
-      "Read(~/.aws/**)",
-      "Read(**/.env)",
-      "Read(**/.env.*)"
-    ]
+  ```json
+  {
+    "permissions": {
+      "deny": [
+        "Read(~/.ssh/**)",
+        "Read(~/.aws/**)",
+        "Read(**/.env)",
+        "Read(**/.env.*)"
+      ]
+    }
   }
-}
-```
+  ```
 
 The residual risk — an injection biasing the score or analysis wording —
 is inherent to any LLM-based review and is why every report is marked
@@ -116,7 +196,7 @@ would otherwise have: the risk-analyst stage's reads inside the registered
 fetch directory, and the plugin's own helper MCP tools (`fetch` and
 `render`). The skill's `allowed-tools` frontmatter constrains what the turn
 may use but is not a permission grant, and a plugin cannot ship permission
-rules - the hook's explicit allow is the plugin-side mechanism that skips
+rules — the hook's explicit allow is the plugin-side mechanism that skips
 the prompt. User-configured deny and ask rules always override it. If you
 run with the plugin's hooks disabled, the equivalent settings rules are
 `mcp__plugin_soundings_helper__fetch` and
@@ -126,14 +206,16 @@ File writes never prompt either, because no agent performs them: the
 helper itself persists the analysis JSON and the rendered report into the
 data directory, and writes the caller-chosen `report_path` copy (absolute
 `.md` path only; an existing file is only overwritten when it is a
-previously generated soundings report, so the auto-approved tool cannot be
+previously generated Soundings report, so the auto-approved tool cannot be
 steered into clobbering arbitrary files). The analyze skill turn disallows
 the Write tool outright — every file this pipeline produces is written by
 the helper. A normal run is fully prompt-free.
 
 ## Status
 
-Under active development.
+Under active development. Every generated report links to a short
+[feedback form](https://forms.gle/qkinM8bZ4uCDDWsL8) — it directly shapes
+what changes next.
 
 ## Provenance
 
