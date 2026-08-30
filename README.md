@@ -57,10 +57,17 @@ repository documentation — is externally authored and treated as untrusted:
   secret that slips into the assessment never reaches the report.
 
 - **Reads are confined, not just read-only.** The plugin bundles a
-  PreToolUse hook (`go run . hook`) that denies any Read, Grep, or Glob by
-  the risk-analyst agent outside the fetched data directory, so injected
-  content cannot steer it into reading or searching secrets elsewhere on
-  disk (`~/.ssh`, `.env` files) and leaking them into the analysis.
+  PreToolUse hook (`go run . hook`) backed by a registry of the exact
+  output directories the fetch step created (a per-user file under the OS
+  cache directory). The hook approves the risk-analyst agent's Read, Grep,
+  and Glob inside a registered directory — skipping the permission prompt,
+  so the isolated stage runs unattended — and denies them anywhere else, so
+  injected content cannot steer it into reading or searching secrets
+  elsewhere on disk (`~/.ssh`, `.env` files) and leaking them into the
+  analysis. A successful render withdraws the run's authorization; crashed
+  runs expire from the registry after 24 hours. Every registry failure
+  reads as "not registered" and denies — it fails closed. User-configured
+  deny rules always override the hook's approval.
   Whether plugin-bundled hooks fire inside subagents is not yet
   documented behavior; to make the confinement unconditional, register
   the same hook in your own settings:
@@ -101,6 +108,28 @@ whole session, subagents included — deny rules always beat allow rules:
 The residual risk — an injection biasing the score or analysis wording —
 is inherent to any LLM-based review and is why every report is marked
 advisory.
+
+## Running without permission prompts
+
+The read-confinement hook already pre-approves the risk-analyst stage's
+reads, so a run has two remaining prompt sources. The helper MCP tools
+prompt like any MCP tool; plugins cannot ship permission rules, so allow
+them once in your own settings (or answer "Yes, and don't ask again" on the
+first prompt, which saves the equivalent rule per repository):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_soundings_helper__fetch",
+      "mcp__plugin_soundings_helper__render"
+    ]
+  }
+}
+```
+
+The one remaining prompt is the orchestrator writing the analysis JSON to
+disk (a file-modification prompt, kept for the validation retry loop).
 
 ## Status
 
