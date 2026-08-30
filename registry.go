@@ -29,6 +29,13 @@ const registryTTL = 24 * time.Hour
 type registryEntry struct {
 	Dir          string    `json:"dir"`
 	RegisteredAt time.Time `json:"registered_at"`
+
+	// Kind distinguishes directory entries (everything under them is
+	// authorized; "" for compatibility with entries written before files
+	// existed) from single-file entries ("file", exactly that path - used
+	// for the report copy at report_path so post-render edits to it are
+	// pre-approved).
+	Kind string `json:"kind,omitempty"`
 }
 
 // registryPath returns the fixed per-user location of the registry file.
@@ -45,11 +52,22 @@ func registryPath() (string, error) {
 	return filepath.Join(base, "allowed-dirs.json"), nil
 }
 
-// registerDir records dir (absolute, symlink-resolved) as authorized for
-// the risk-analyst agent, pruning dead and expired entries while it holds
-// the file. The directory must exist.
+// registerDir records dir (absolute, symlink-resolved) as authorized,
+// pruning dead and expired entries while it holds the file. The directory
+// must exist.
 func registerDir(dir string) error {
-	resolved, err := canonicalDir(dir)
+	return register(dir, "dir")
+}
+
+// registerFile records one file (absolute, symlink-resolved) as authorized,
+// so the hook can pre-approve later Write/Edit calls on exactly that path.
+// The file must exist.
+func registerFile(file string) error {
+	return register(file, "file")
+}
+
+func register(target, kind string) error {
+	resolved, err := canonicalPath(target)
 	if err != nil {
 		return err
 	}
@@ -64,7 +82,7 @@ func registerDir(dir string) error {
 			kept = append(kept, e)
 		}
 	}
-	kept = append(kept, registryEntry{Dir: resolved, RegisteredAt: time.Now().UTC()})
+	kept = append(kept, registryEntry{Dir: resolved, RegisteredAt: time.Now().UTC(), Kind: kind})
 	return saveEntries(path, kept)
 }
 
@@ -72,7 +90,7 @@ func registerDir(dir string) error {
 // that was never registered is not an error - the goal state (not
 // authorized) already holds.
 func deregisterDir(dir string) error {
-	resolved, err := canonicalDir(dir)
+	resolved, err := canonicalPath(dir)
 	if err != nil {
 		return err
 	}
@@ -93,27 +111,30 @@ func deregisterDir(dir string) error {
 	return saveEntries(path, kept)
 }
 
-// allowedDirs returns the currently authorized directories for the hook.
-// Read-only: expired or dead entries are filtered in memory but the file is
-// only rewritten by register/deregister, so the hook never needs write
-// access to the cache directory.
-func allowedDirs() []string {
+// allowedTargets returns the currently authorized directories and files
+// for the hook. Read-only: expired or dead entries are filtered in memory
+// but the registry file is only rewritten by register/deregister, so the
+// hook never needs write access to the cache directory.
+func allowedTargets() (dirs, files []string) {
 	path, err := registryPath()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	var dirs []string
 	for _, e := range pruneEntries(loadEntries(path)) {
-		dirs = append(dirs, e.Dir)
+		if e.Kind == "file" {
+			files = append(files, e.Dir)
+		} else {
+			dirs = append(dirs, e.Dir)
+		}
 	}
-	return dirs
+	return dirs, files
 }
 
-// canonicalDir makes dir absolute and symlink-resolved, so registry entries
-// compare equal to the resolved form of any path the hook checks (e.g. a
-// macOS /tmp/... path registering as /private/tmp/...).
-func canonicalDir(dir string) (string, error) {
-	abs, err := filepath.Abs(dir)
+// canonicalPath makes a path absolute and symlink-resolved, so registry
+// entries compare equal to the resolved form of any path the hook checks
+// (e.g. a macOS /tmp/... path registering as /private/tmp/...).
+func canonicalPath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +161,11 @@ func pruneEntries(entries []registryEntry) []registryEntry {
 		if time.Since(e.RegisteredAt) > registryTTL {
 			continue
 		}
-		if info, err := os.Stat(e.Dir); err != nil || !info.IsDir() {
+		info, err := os.Stat(e.Dir)
+		if err != nil {
+			continue
+		}
+		if wantDir := e.Kind != "file"; info.IsDir() != wantDir {
 			continue
 		}
 		kept = append(kept, e)

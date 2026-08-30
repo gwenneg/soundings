@@ -82,6 +82,44 @@ func TestRunHook(t *testing.T) {
 	}
 }
 
+func TestRunHookWriteAndEdit(t *testing.T) {
+	dataDir := hookSetup(t)
+
+	report := filepath.Join(t.TempDir(), "soundings-report.md")
+	if err := os.WriteFile(report, []byte("r"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := registerFile(report); err != nil {
+		t.Fatalf("registerFile: %v", err)
+	}
+
+	cases := []struct {
+		name, tool, path string
+		want             string
+	}{
+		{"Edit on registered report file allowed", "Edit", report, "allow"},
+		{"Write on registered report file allowed", "Write", report, "allow"},
+		{"Write inside registered data dir allowed", "Write", filepath.Join(dataDir, "analysis.json"), "allow"},
+		{"Edit elsewhere gets no opinion", "Edit", "/Users/someone/notes.md", ""},
+		{"Write elsewhere gets no opinion", "Write", "/Users/someone/notes.md", ""},
+		{"Write on unregistered sibling gets no opinion", "Write", filepath.Join(filepath.Dir(report), "other.md"), ""},
+	}
+	for _, c := range cases {
+		// Main-session calls: agent_type is empty.
+		out := invokeHook(t, "", c.tool, c.path)
+		got := ""
+		if strings.Contains(out, `"permissionDecision":"allow"`) {
+			got = "allow"
+		} else if out != "" {
+			t.Errorf("%s: unexpected output %q", c.name, out)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s: decision %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestRunHookDeniesEverythingWithoutRegistry(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir()) // empty: no registry file
 

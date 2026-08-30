@@ -122,8 +122,16 @@ run with the plugin's hooks disabled, the equivalent settings rules are
 `mcp__plugin_soundings_helper__fetch` and
 `mcp__plugin_soundings_helper__render` in `permissions.allow`.
 
-The one remaining prompt is the orchestrator writing the analysis JSON to
-disk (a file-modification prompt, kept for the validation retry loop).
+File writes never prompt either, because no agent performs them: the
+helper itself persists the analysis JSON and the rendered report into the
+data directory, and writes the caller-chosen `report_path` copy (absolute
+`.md` path only; an existing file is only overwritten when it is a
+previously generated soundings report, so the auto-approved tool cannot be
+steered into clobbering arbitrary files). That copy is registered with the
+confinement hook, so editing it afterwards — e.g. asking to annotate the
+report — is pre-approved as well; Write/Edit calls anywhere else get no
+opinion from the hook and follow the session's normal permission flow. A
+normal run is fully prompt-free.
 
 ## Status
 
