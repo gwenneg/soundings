@@ -190,7 +190,11 @@ Respond with EXACTLY this JSON structure and nothing else (severities
 lowercase: `critical`, `high`, `medium`, `low`). The `model` field is
 REQUIRED — state your own exact model identifier; the render step rejects
 an analysis without it and returns it to you for correction, and the report
-footer credits the model that performed the analysis:
+footer credits the model that performed the analysis. Objects in `concerns`
+and `positives` have EXACTLY the fields shown below — no extra fields such
+as a separate `file` key; the schema rejects unknown fields. Put file/line
+references inline in the `description` text instead, as `technical_details`
+entries already do:
 
 ```json
 {
