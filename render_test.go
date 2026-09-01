@@ -9,7 +9,6 @@ import (
 
 const validAnalysisJSON = `{
 	"model": "claude-test-9",
-	"score": 85,
 	"summary": "routine changes",
 	"risk_summary": {"concerns": [], "positives": []},
 	"action_items": {"critical": [], "important": [], "followup": []},
@@ -35,27 +34,23 @@ func renderFixture(t *testing.T) string {
 	return dataDir
 }
 
-func defaultRenderOpts() renderOpts {
-	return renderOpts{AutoDeploy: 80, ReviewRequired: 60}
-}
-
 func TestDoRenderPersistsAnalysisAndReport(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
 	dataDir := renderFixture(t)
 
-	result, validationErrs, err := doRender(validAnalysisJSON, dataDir, defaultRenderOpts())
+	result, validationErrs, err := doRender(validAnalysisJSON, dataDir, renderOpts{})
 	if err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender: err=%v validationErrs=%v", err, validationErrs)
 	}
-	if result.Score != 85 {
-		t.Errorf("score = %d, want 85", result.Score)
+	if result.Verdict != "release" {
+		t.Errorf("verdict = %q, want %q", result.Verdict, "release")
 	}
 
 	saved, err := os.ReadFile(filepath.Join(dataDir, "analysis.json"))
 	if err != nil {
 		t.Fatalf("analysis.json not persisted: %v", err)
 	}
-	if !strings.Contains(string(saved), `"score": 85`) {
+	if !strings.Contains(string(saved), `"summary": "routine changes"`) {
 		t.Errorf("analysis.json does not contain the analysis: %q", saved)
 	}
 
@@ -72,7 +67,8 @@ func TestDoRenderPersistsAnalysisOnValidationFailure(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
 	dataDir := renderFixture(t)
 
-	_, validationErrs, err := doRender(`{"score": 300}`, dataDir, defaultRenderOpts())
+	// A legacy score-bearing analysis is rejected as an unknown field.
+	_, validationErrs, err := doRender(`{"score": 85}`, dataDir, renderOpts{})
 	if err != nil {
 		t.Fatalf("doRender: %v", err)
 	}
@@ -84,13 +80,56 @@ func TestDoRenderPersistsAnalysisOnValidationFailure(t *testing.T) {
 	}
 }
 
+func TestDoRenderComputesVerdictFromConcerns(t *testing.T) {
+	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
+	dataDir := renderFixture(t)
+
+	analysis := `{
+		"model": "claude-test-9",
+		"summary": "risky changes",
+		"risk_summary": {"concerns": [{"severity": "high", "description": "auth change unverified"}], "positives": []},
+		"action_items": {"critical": [], "important": [], "followup": []},
+		"technical_details": {"code": [], "infrastructure": [], "dependencies": []},
+		"documentation_quality": "ok",
+		"documentation_recommendations": "none"
+	}`
+
+	result, validationErrs, err := doRender(analysis, dataDir, renderOpts{})
+	if err != nil || len(validationErrs) > 0 {
+		t.Fatalf("doRender: err=%v validationErrs=%v", err, validationErrs)
+	}
+	if result.Verdict != "review" {
+		t.Errorf("verdict = %q, want %q (high concern under default block_on)", result.Verdict, "review")
+	}
+	if !strings.Contains(result.ReportMarkdown, "auth change unverified") {
+		t.Error("report should cite the concern that drove the verdict")
+	}
+
+	// The same concern blocks outright under a stricter policy.
+	result, validationErrs, err = doRender(analysis, dataDir, renderOpts{BlockOn: "high"})
+	if err != nil || len(validationErrs) > 0 {
+		t.Fatalf("doRender (block_on=high): err=%v validationErrs=%v", err, validationErrs)
+	}
+	if result.Verdict != "not_recommended" {
+		t.Errorf("verdict = %q, want %q under block_on=high", result.Verdict, "not_recommended")
+	}
+}
+
+func TestDoRenderRejectsInvalidBlockOn(t *testing.T) {
+	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
+	dataDir := renderFixture(t)
+
+	if _, _, err := doRender(validAnalysisJSON, dataDir, renderOpts{BlockOn: "sometimes"}); err == nil {
+		t.Error("expected an error for an invalid block_on value")
+	}
+}
+
 func TestDoRenderWritesReportCopy(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
 	dataDir := renderFixture(t)
 	reportPath := filepath.Join(t.TempDir(), "soundings-report.md")
 
-	opts := defaultRenderOpts()
-	opts.ReportPath = reportPath
+	opts := renderOpts{ReportPath: reportPath}
 	if _, validationErrs, err := doRender(validAnalysisJSON, dataDir, opts); err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender: err=%v validationErrs=%v", err, validationErrs)
 	}

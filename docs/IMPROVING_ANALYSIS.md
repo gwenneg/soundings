@@ -1,6 +1,6 @@
-# Improving Your Release Confidence Analysis
+# Improving Your Release Readiness Analysis
 
-This guide explains how to get more accurate confidence scores and better analysis from the Release Confidence Score tool.
+This guide explains how to get more accurate verdicts and better analysis from Soundings.
 
 ## Quick Wins
 
@@ -58,7 +58,7 @@ load tested and approved by the platform team. No database changes required.
 - Dependencies or sequencing requirements
 - Business context the AI can't see
 
-**Authorization:** Only guidance from PR/MR authors and approvers is used in the analysis. Other comments are shown in the report but not factored into scoring.
+**Authorization:** Only guidance from PR/MR authors and approvers is used in the analysis. Other comments are shown in the report but not factored into the assessment.
 
 ---
 
@@ -112,7 +112,7 @@ Separate high-risk and low-risk changes:
 
 **Why this helps:**
 - Easier to analyze and understand each change's impact
-- More accurate confidence scores
+- More accurate verdicts
 - Simpler rollback if issues arise
 
 ---
@@ -157,19 +157,25 @@ The tool fetches all links equally - this is just guidance on what tends to be m
 
 ---
 
-## Understanding Your Score
+## Understanding Your Verdict
 
-### Score Interpretation
+### How the Verdict Is Computed
 
-Default thresholds (configurable via environment variables):
+The verdict is derived deterministically from the severities of the
+concerns the analysis finds, under the `block_on` policy (default
+`critical`):
 
-| Score | Recommendation |
-|-------|----------------|
-| 80-100 | Recommended for release |
-| 60-79 | Manual review required |
-| 0-59 | Release not recommended |
+| Finding | Verdict |
+|---------|---------|
+| Any concern at or above `block_on` | 🚫 Release not recommended |
+| Any concern one severity below `block_on`, or an outstanding "complete before release" action item | ⚠️ Manual review required |
+| Neither | ✅ Recommended for release |
 
-### Factors That Improve Scores
+Every verdict cites the concerns that drove it, so improving your verdict
+means resolving (or providing evidence that de-escalates) those specific
+concerns.
+
+### Factors That Reduce Concern Severity
 
 - Comprehensive repository documentation
 - Test coverage evidenced in the diff (tests changed alongside code)
@@ -179,7 +185,7 @@ Default thresholds (configurable via environment variables):
 - Changes to low-risk files (tests, docs)
 - Documented rollback procedures
 
-### Factors That Lower Scores
+### Factors That Raise Concern Severity
 
 - Missing or sparse documentation
 - High-risk changes (database, auth, API contracts)
@@ -217,7 +223,7 @@ The tool classifies files by risk tier to prioritize how deeply each is read:
 
 ## Common Scenarios
 
-### "My score is lower than expected"
+### "My verdict is stricter than expected"
 
 **Checklist:**
 - [ ] Did you add `/soundings note` guidance explaining the changes?
@@ -288,11 +294,13 @@ Include:
 
 ## Configuration Reference
 
-### Score Thresholds
+### Blocking Policy
 
-Thresholds are parameters of the analysis invocation (defaults: 80 for
-"recommended", 60 for "review required"); callers such as orchestrating
-skills may pass their own values.
+`block_on` is a parameter of the analysis invocation: the severity at or
+above which a concern blocks the release (`critical` by default; `high`
+or `medium` for stricter gating of critical services). Concerns one
+severity below it produce a manual-review verdict. Callers such as
+orchestrating skills may pass their own value.
 
 
 ## Getting Help

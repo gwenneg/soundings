@@ -9,7 +9,8 @@
 //
 //	render  Validates the structured analysis JSON (field-level errors on
 //	        mismatch) and renders the final markdown report, computing the
-//	        recommendation banner from the score and thresholds.
+//	        release verdict from the concern severities and the block_on
+//	        policy.
 //
 // With the single argument "hook" it instead runs as a Claude Code
 // PreToolUse hook that confines the risk-analyst agent's Read, Grep, and
@@ -44,7 +45,7 @@ import (
 )
 
 // pluginVersion mirrors .claude-plugin/plugin.json; bump both together.
-const pluginVersion = "0.4.0"
+const pluginVersion = "0.5.0"
 
 func main() {
 	initLogging()
@@ -175,8 +176,7 @@ type DocSummary struct {
 	FetchError string `json:"fetch_error,omitempty" jsonschema:"set when documentation was unavailable (auth/network), as opposed to absent"`
 }
 
-// doFetch is the core of the fetch operation, shared by the CLI and the MCP
-// server.
+// doFetch is the core of the fetch operation, behind the MCP fetch tool.
 func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 	for i, u := range urls {
 		urls[i] = stripQueryFragment(u)
@@ -519,9 +519,12 @@ func countLines(s string) int {
 // ---------------------------------------------------------------------------
 
 type renderOpts struct {
-	AutoDeploy     int
-	ReviewRequired int
-	ExtraGuidance  []extraGuidanceEntry
+	// BlockOn is the severity at or above which a concern blocks the
+	// release ("critical", "high", or "medium"); empty means the default
+	// (report.DefaultBlockOn). Concerns one rank below it require manual
+	// review.
+	BlockOn       string
+	ExtraGuidance []extraGuidanceEntry
 
 	// ReportPath, when set, is an additional caller-chosen location the
 	// rendered markdown is written to (see writeReportCopy for the
@@ -531,20 +534,18 @@ type renderOpts struct {
 
 // RenderResult is the successful outcome of a render.
 type RenderResult struct {
-	Score          int    `json:"score"`
+	Verdict        string `json:"verdict" jsonschema:"the computed release verdict: release, review, or not_recommended"`
 	ReportMarkdown string `json:"report_markdown"`
 }
 
-// doRender is the core of the render operation, shared by the CLI and the
-// MCP server. It returns (nil, validationErrors, nil) when the analysis
+// doRender is the core of the render operation, behind the MCP render
+// tool. It returns (nil, validationErrors, nil) when the analysis
 // fails schema validation - the caller relays the field-level errors so the
 // analysis can be corrected and re-run.
 func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []string, error) {
-	if opts.AutoDeploy < 0 || opts.AutoDeploy > 100 || opts.ReviewRequired < 0 || opts.ReviewRequired > 100 {
-		return nil, nil, fmt.Errorf("auto-deploy and review-required thresholds must be between 0 and 100")
-	}
-	if opts.AutoDeploy < opts.ReviewRequired {
-		return nil, nil, fmt.Errorf("auto-deploy (%d) must be >= review-required (%d)", opts.AutoDeploy, opts.ReviewRequired)
+	if !report.IsValidBlockOn(opts.BlockOn) {
+		return nil, nil, fmt.Errorf("block_on must be one of %s; got %q",
+			strings.Join(report.BlockOnSeverities(), ", "), opts.BlockOn)
 	}
 
 	// Strip fences and redact credentials once, before validation:
@@ -599,17 +600,16 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		guidance = append(guidance, extra...)
 	}
 
-	slog.Info("Rendering report", "data_dir", dataDir, "auto_deploy", opts.AutoDeploy, "review_required", opts.ReviewRequired)
+	slog.Info("Rendering report", "data_dir", dataDir, "block_on", opts.BlockOn)
 
-	score, out, err := report.GenerateReport(&report.ReportConfig{
-		LLMResponse:             analysisJSON,
-		Metadata:                &report.ReportMetadata{GenerationTime: time.Now().UTC()},
-		Comparisons:             comparisons,
-		Documentation:           documentation,
-		UserGuidance:            guidance,
-		AutoDeployThreshold:     opts.AutoDeploy,
-		ReviewRequiredThreshold: opts.ReviewRequired,
-		TruncationInfo:          truncationInfo(&index),
+	verdict, out, err := report.GenerateReport(&report.ReportConfig{
+		LLMResponse:    analysisJSON,
+		Metadata:       &report.ReportMetadata{GenerationTime: time.Now().UTC()},
+		Comparisons:    comparisons,
+		Documentation:  documentation,
+		UserGuidance:   guidance,
+		BlockOn:        opts.BlockOn,
+		TruncationInfo: truncationInfo(&index),
 	})
 	if err != nil {
 		return nil, nil, err
@@ -637,9 +637,9 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		slog.Warn("Failed to deregister fetch directory", "dir", dataDir, "error", err)
 	}
 
-	slog.Info("Render complete", "score", score)
+	slog.Info("Render complete", "verdict", verdict)
 
-	return &RenderResult{Score: score, ReportMarkdown: out}, nil, nil
+	return &RenderResult{Verdict: string(verdict), ReportMarkdown: out}, nil, nil
 }
 
 // reportBanner is the first line of every rendered report (from
@@ -767,8 +767,9 @@ func truncationInfo(index *Index) *report.TruncationInfo {
 	return info
 }
 
-// extraGuidanceEntry is the caller-facing shape for --extra-guidance files.
-// All entries are treated as pre-authorized: the caller vouches for them.
+// extraGuidanceEntry is the caller-facing shape of the render tool's
+// extra_guidance entries. All are treated as pre-authorized: the caller
+// vouches for them.
 type extraGuidanceEntry struct {
 	Content    string `json:"content"`
 	Author     string `json:"author"`
@@ -805,8 +806,6 @@ func toUserGuidance(entries []extraGuidanceEntry) ([]types.UserGuidance, error) 
 	return out, nil
 }
 
-var validSeverities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-
 // validateAnalysis checks the agent's structured output against the report
 // schema, returning one message per problem so the agent can fix its output
 // precisely instead of guessing.
@@ -824,15 +823,13 @@ func validateAnalysis(data []byte) []string {
 	if strings.TrimSpace(a.Model) == "" {
 		errs = append(errs, "model: required - state the exact model identifier that produced this analysis (the risk-analyst agent's own identity)")
 	}
-	if a.Score < 0 || a.Score > 100 {
-		errs = append(errs, fmt.Sprintf("score: must be 0-100, got %d", a.Score))
-	}
 	if strings.TrimSpace(a.Summary) == "" {
 		errs = append(errs, "summary: required, must be a non-empty one-line summary")
 	}
 	for i, c := range a.RiskSummary.Concerns {
-		if !validSeverities[c.Severity] {
-			errs = append(errs, fmt.Sprintf("risk_summary.concerns[%d].severity: must be one of critical|high|medium|low (lowercase), got %q", i, c.Severity))
+		if !report.IsValidSeverity(c.Severity) {
+			errs = append(errs, fmt.Sprintf("risk_summary.concerns[%d].severity: must be one of %s (lowercase), got %q",
+				i, strings.Join(report.SeverityNames(), "|"), c.Severity))
 		}
 		if strings.TrimSpace(c.Description) == "" {
 			errs = append(errs, fmt.Sprintf("risk_summary.concerns[%d].description: required", i))

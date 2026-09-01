@@ -5,9 +5,11 @@
 Sailors have long measured the water's [depth](https://en.wikipedia.org/wiki/Depth_sounding)
 ahead before committing a ship to a course. Soundings does the same for a
 release: point it at one or more GitHub/GitLab compare URLs and it reads
-the diffs, commit history, and reviewer discussion, then hands back a
-release confidence score (0–100) and a report specific enough to act on —
-named files, named functions, concrete commands to run before you ship.
+the diffs, commit history, and reviewer discussion, then hands back one
+clear verdict — release, manual review, or no-go, computed from the
+severities of the risks it found and citing each one that drove it — and
+a report specific enough to act on: named files, named functions,
+concrete commands to run before you ship.
 
 ```
 /soundings:analyze https://github.com/org/repo/compare/v1.0...v1.1
@@ -49,12 +51,16 @@ anyway to fetch the diff.
 <summary>Sample output (abridged)</summary>
 
 ```markdown
-# 🚀 Release Confidence Report
+# 🚀 Release Readiness Report
 
 ## 🎯 Summary
 
-**Confidence score:** 72/100
 **Recommendation:** ⚠️ MANUAL REVIEW REQUIRED
+
+Driven by:
+- ⚠️ `internal/webhook/retry.go` raises the max retry count from 3 to 8
+  with no ceiling on total wall-clock time — no test exercises the new
+  upper bound.
 
 A well-tested rate-limiter change, but the new retry logic in the payment
 webhook handler has no test covering the exponential-backoff cap.
@@ -129,9 +135,12 @@ repository documentation — is externally authored and treated as untrusted:
   inside a diff can at most skew the analysis text it returns, not drive
   tools in your session.
 - **The verdict is computed, not written.** The renderer derives the
-  recommendation banner from the numeric score and thresholds, validates
+  release verdict from the schema-validated concern severities and the
+  `block_on` policy — each severity attached to a human-checkable
+  description, so flipping the verdict requires fabricating or
+  suppressing a whole named concern, not nudging a number — validates
   the analysis against a schema, and escapes externally-authored text in
-  the report — analysis prose cannot fake a verdict or forge report
+  the report: analysis prose cannot fake a verdict or forge report
   structure. Recognizable credentials (platform tokens, cloud keys, PEM
   blocks, JWTs) are redacted from the analysis before validation, so a
   secret that slips into the assessment never reaches the report.
@@ -185,9 +194,11 @@ repository documentation — is externally authored and treated as untrusted:
   }
   ```
 
-The residual risk — an injection biasing the score or analysis wording —
-is inherent to any LLM-based review and is why every report is marked
-advisory.
+The residual risk — an injection biasing a concern's severity or the
+analysis wording — is inherent to any LLM-based review and is why every
+report is marked advisory; the severity-driven verdict at least forces
+that bias into the most auditable place, a named concern a human will
+read.
 
 ## Running without permission prompts
 
