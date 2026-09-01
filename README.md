@@ -149,10 +149,22 @@ repository documentation — is externally authored and treated as untrusted:
   so the isolated stage runs unattended — and denies them anywhere else, so
   injected content cannot steer it into reading or searching secrets
   elsewhere on disk (`~/.ssh`, `.env` files) and leaking them into the
-  analysis. A successful render withdraws the run's authorization; crashed
-  runs expire from the registry after 24 hours. Every registry failure
-  reads as "not registered" and denies — it fails closed. User-configured
-  deny rules always override the hook's approval.
+  analysis. The same hook confines in the other direction too: every other
+  agent, the orchestrating session included, is denied those tools
+  wherever they would reach inside a registered directory — reads inside
+  it, recursive searches rooted above it, absolute glob patterns anchored
+  near it — so the read tools cannot pull untrusted fetched content into
+  any other agent's context (the analyze skill's turn separately disallows
+  shell and network tools). The directory itself is helper-owned from
+  creation to deletion, and only a directory the registry vouches for is
+  ever rendered from — or deleted: a successful render deletes the fetched
+  data and withdraws its registration together, a failed fetch cleans up
+  behind itself, and for an abandoned run the risk-analyst's authorization
+  expires after 24 hours while the keep-out holds for as long as the data
+  exists — the next fetch deletes both together. Every
+  registry failure reads as "not registered" and denies the risk-analyst —
+  it fails closed. User-configured deny rules always override the hook's
+  approval.
 
   Whether plugin-bundled hooks fire inside subagents is not yet documented
   behavior; to make the confinement unconditional, register the same hook
@@ -211,8 +223,9 @@ run with the plugin's hooks disabled, the equivalent settings rules are
 `mcp__plugin_soundings_helper__render` in `permissions.allow`.
 
 File writes never prompt either, because no agent performs them: the
-helper itself persists the analysis JSON and the rendered report into the
-data directory, and writes the caller-chosen `report_path` copy (absolute
+helper itself persists the analysis JSON for the validation retry loop
+(a successful render deletes the data directory, so the report lives on
+as `report_markdown` in the tool result), and writes the caller-chosen `report_path` copy (absolute
 `.md` path only; an existing file is only overwritten when it is a
 previously generated Soundings report, so the auto-approved tool cannot be
 steered into clobbering arbitrary files). The analyze skill turn disallows

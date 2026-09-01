@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // hookSetup points the registry at a per-test cache dir and registers one
@@ -25,8 +26,13 @@ func hookSetup(t *testing.T) string {
 
 func invokeHook(t *testing.T, agentType, tool, path string) string {
 	t.Helper()
-	in := fmt.Sprintf(`{"tool_name":%q,"agent_type":%q,"cwd":"/","tool_input":{"file_path":%q,"path":%q}}`,
-		tool, agentType, path, path)
+	return invokeHookFull(t, agentType, tool, path, "", "/")
+}
+
+func invokeHookFull(t *testing.T, agentType, tool, path, pattern, cwd string) string {
+	t.Helper()
+	in := fmt.Sprintf(`{"tool_name":%q,"agent_type":%q,"cwd":%q,"tool_input":{"file_path":%q,"path":%q,"pattern":%q}}`,
+		tool, agentType, cwd, path, path, pattern)
 	var out strings.Builder
 	if err := runHook(strings.NewReader(in), &out); err != nil {
 		t.Fatalf("runHook: %v", err)
@@ -59,11 +65,22 @@ func TestRunHook(t *testing.T) {
 		{"helper render tool pre-approved for main session", "", "mcp__plugin_soundings_helper__render", "", "allow"},
 		{"lookalike plugin MCP tool untouched", "", "mcp__plugin_evil_helper__fetch", "", ""},
 		{"bare-named helper server untouched", "", "mcp__helper__fetch", "", ""},
-		{"main session untouched", "", "Read", "/Users/someone/.ssh/id_rsa", ""},
-		{"other agents untouched", "Explore", "Read", "/Users/someone/.ssh/id_rsa", ""},
-		{"prefix without namespace untouched", "harisk-analyst", "Read", "/etc/passwd", ""},
-		{"other plugin's risk-analyst untouched", "otherplugin:risk-analyst", "Read", dataDir, ""},
+		{"main session untouched outside fetch dir", "", "Read", "/Users/someone/.ssh/id_rsa", ""},
+		{"main session denied inside fetch dir", "", "Read", filepath.Join(dataDir, "index.json"), "deny"},
+		{"main session denied Grep inside fetch dir", "", "Grep", filepath.Join(dataDir, "patches"), "deny"},
+		{"main session denied Glob on fetch dir itself", "", "Glob", dataDir, "deny"},
+		{"other agents untouched outside fetch dir", "Explore", "Read", "/Users/someone/.ssh/id_rsa", ""},
+		{"other agents denied inside fetch dir", "Explore", "Read", filepath.Join(dataDir, "patches", "repo", "001-main.go.patch"), "deny"},
+		{"prefix without namespace untouched outside fetch dir", "harisk-analyst", "Read", "/etc/passwd", ""},
+		{"other plugin's risk-analyst denied inside fetch dir", "otherplugin:risk-analyst", "Read", dataDir, "deny"},
+		{"other plugin's risk-analyst untouched outside fetch dir", "otherplugin:risk-analyst", "Read", "/etc/passwd", ""},
 		{"other tools untouched", "risk-analyst", "Bash", "/etc/passwd", ""},
+		// cwd is "/" in these invocations, and a recursive search rooted
+		// there reaches every registered directory.
+		{"main session Grep on empty path denied when cwd contains a fetch dir", "", "Grep", "", "deny"},
+		{"main session Grep denied on fetch dir ancestor", "", "Grep", filepath.Dir(dataDir), "deny"},
+		{"main session Glob denied on fetch dir ancestor", "", "Glob", filepath.Dir(dataDir), "deny"},
+		{"main session Read untouched on fetch dir ancestor", "", "Read", filepath.Dir(dataDir), ""},
 	}
 	for _, c := range cases {
 		out := invokeHook(t, c.agentType, c.tool, c.path)
@@ -91,15 +108,69 @@ func TestRunHookDeniesEverythingWithoutRegistry(t *testing.T) {
 	}
 }
 
-func TestRunHookDeniesAfterDeregistration(t *testing.T) {
+func TestRunHookDeniesAfterRelease(t *testing.T) {
 	dataDir := hookSetup(t)
-	if err := deregisterDir(dataDir); err != nil {
-		t.Fatalf("deregisterDir: %v", err)
-	}
+	releaseDir(dataDir)
 
 	out := invokeHook(t, "risk-analyst", "Read", filepath.Join(dataDir, "index.json"))
 	if !strings.Contains(out, `"permissionDecision":"deny"`) {
-		t.Errorf("expected deny after deregistration, got %q", out)
+		t.Errorf("expected deny after release, got %q", out)
+	}
+
+	// The keep-out ends with the registration too: the data is gone, so
+	// the normal permission flow applies again.
+	if out := invokeHookFull(t, "", "Read", filepath.Join(dataDir, "index.json"), "", "/Users/someone/project"); out != "" {
+		t.Errorf("expected no opinion for the main session after release, got %q", out)
+	}
+}
+
+func TestRunHookGlobPattern(t *testing.T) {
+	dataDir := hookSetup(t)
+	benign := t.TempDir() // a cwd that contains no registered directory
+	sibling := filepath.Join(filepath.Dir(dataDir), "benign-sibling")
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name                     string
+		agentType, path, pattern string
+		want                     string
+	}{
+		{"main session denied on absolute pattern into fetch dir", "", "", filepath.Join(dataDir, "**", "*.patch"), "deny"},
+		{"main session denied on absolute pattern over fetch dir ancestor", "", "", filepath.Join(filepath.Dir(dataDir), "soundings-*", "**"), "deny"},
+		{"main session untouched on absolute pattern elsewhere", "", "", "/etc/**", ""},
+		{"main session denied on relative pattern traversing into fetch dir", "", sibling, filepath.Join("..", filepath.Base(dataDir), "**"), "deny"},
+		{"main session denied on case-variant absolute pattern", "", "", filepath.Join(caseVariant(dataDir), "**"), "deny"},
+		{"risk-analyst denied on absolute pattern escaping fetch dir", "risk-analyst", dataDir, "/etc/**", "deny"},
+		{"risk-analyst denied on relative pattern traversing out of fetch dir", "risk-analyst", dataDir, "../../../etc/*", "deny"},
+		{"risk-analyst allowed on absolute pattern inside fetch dir", "risk-analyst", dataDir, filepath.Join(dataDir, "patches", "**"), "allow"},
+		{"risk-analyst allowed on absolute in-bounds pattern with path omitted", "risk-analyst", "", filepath.Join(dataDir, "patches", "**"), "allow"},
+		{"risk-analyst allowed on relative pattern with in-bounds path", "risk-analyst", dataDir, "patches/**/*.patch", "allow"},
+		// Patterns whose reach a static prefix cannot bound are treated as
+		// reaching anywhere: denied in both directions.
+		{"main session denied on brace pattern", "", "", "{" + dataDir + ",x}/**", "deny"},
+		{"risk-analyst denied on brace pattern", "risk-analyst", dataDir, "{a,b}/**", "deny"},
+		// A separator-free group expands to filenames, not paths: bounded.
+		{"main session untouched on filename brace pattern", "", "", "src/**/*.{ts,tsx}", ""},
+		{"risk-analyst allowed on filename brace pattern", "risk-analyst", dataDir, "patches/**/*.{go,md}", "allow"},
+		{"risk-analyst denied on dot-dot after wildcard", "risk-analyst", dataDir, "patches/**/../../other/*", "deny"},
+		{"main session denied on dot-dot after wildcard", "", sibling, "*/../" + filepath.Base(dataDir) + "/**", "deny"},
+	}
+	for _, c := range cases {
+		out := invokeHookFull(t, c.agentType, "Glob", c.path, c.pattern, benign)
+		got := ""
+		if strings.Contains(out, `"permissionDecision":"allow"`) {
+			got = "allow"
+		} else if strings.Contains(out, `"permissionDecision":"deny"`) {
+			got = "deny"
+		} else if out != "" {
+			t.Errorf("%s: unexpected output %q", c.name, out)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s: decision %q, want %q (output %q)", c.name, got, c.want, out)
+		}
 	}
 }
 
@@ -142,6 +213,52 @@ func TestRunHookAllowsUnresolvedFormOfRegisteredDir(t *testing.T) {
 	out := invokeHook(t, "risk-analyst", "Read", filepath.Join(linkParent, "soundings-x", "index.json"))
 	if !strings.Contains(out, `"permissionDecision":"allow"`) {
 		t.Errorf("expected allow through symlinked parent, got %q", out)
+	}
+}
+
+// caseVariant flips the case of a path's last component, naming the same
+// directory on a case-insensitive filesystem.
+func caseVariant(p string) string {
+	base := strings.ToUpper(filepath.Base(p))
+	if base == filepath.Base(p) {
+		base = strings.ToLower(filepath.Base(p))
+	}
+	return filepath.Join(filepath.Dir(p), base)
+}
+
+func TestRunHookCaseVariantPathStaysFenced(t *testing.T) {
+	dataDir := hookSetup(t)
+
+	variant := filepath.Join(caseVariant(dataDir), "index.json")
+	if out := invokeHook(t, "", "Read", variant); !strings.Contains(out, `"permissionDecision":"deny"`) {
+		t.Errorf("expected deny for a case-variant path into the fetch dir, got %q", out)
+	}
+	// The allow direction never folds: on a case-sensitive filesystem the
+	// variant may be a distinct, attacker-creatable directory.
+	if out := invokeHook(t, "risk-analyst", "Read", variant); !strings.Contains(out, `"permissionDecision":"deny"`) {
+		t.Errorf("expected deny for the risk-analyst on a case-variant path, got %q", out)
+	}
+}
+
+func TestRunHookKeepOutOutlivesAuthorization(t *testing.T) {
+	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
+	dataDir := filepath.Join(t.TempDir(), "soundings-old")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := canonicalDir(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeEntry(t, resolved, time.Now().UTC().Add(-registryTTL-time.Hour))
+
+	// The risk-analyst's authorization has expired...
+	if out := invokeHook(t, "risk-analyst", "Read", filepath.Join(dataDir, "index.json")); !strings.Contains(out, `"permissionDecision":"deny"`) {
+		t.Errorf("expected deny for the risk-analyst on an expired registration, got %q", out)
+	}
+	// ...but the keep-out holds for as long as the untrusted data exists.
+	if out := invokeHook(t, "", "Read", filepath.Join(dataDir, "index.json")); !strings.Contains(out, `"permissionDecision":"deny"`) {
+		t.Errorf("expected the keep-out to outlive the authorization, got %q", out)
 	}
 }
 

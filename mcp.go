@@ -13,15 +13,20 @@ import (
 
 // runMCP serves the fetch and render operations as MCP tools over stdio.
 //
-// Design rule: this function does nothing but register handlers and wait.
-// No credential lookup, no network access, no filesystem writes happen until
-// a tool is actually called — the server is inert at rest, so its eager
-// per-session start (the harness offers no lazy start for local stdio
-// servers) costs a dormant process and nothing else.
+// Design rule: no credential lookup and no network access until a tool is
+// actually called — the server is inert at rest, so its eager per-session
+// start (the harness offers no lazy start for local stdio servers) costs a
+// dormant process and nothing else. The one exception is a local registry
+// prune at startup, so an abandoned run's data and fence are retired when
+// soundings next starts rather than only when a later fetch happens to run.
 func runMCP() error {
+	if entries, err := entriesDir(); err == nil {
+		pruneEntries(entries)
+	}
+
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "soundings",
-		Title:   "Soundings release confidence helper",
+		Title:   "Soundings release readiness helper",
 		Version: pluginVersion,
 	}, nil)
 
@@ -31,7 +36,8 @@ func runMCP() error {
 			"commits, diffs, PR/MR metadata, authorized reviewer guidance, and repository " +
 			"documentation (SSRF-hardened). Auth is resolved per platform and per host " +
 			"(GITHUB_TOKEN / gh auth token, GITLAB_TOKEN / glab auth token). Patches and " +
-			"docs are written to disk for the read-only analysis stage; the result " +
+			"docs are written to a helper-owned temporary directory for the read-only " +
+			"analysis stage (deleted when the run's render succeeds); the result " +
 			"contains only counts and paths, never fetched content.",
 	}, fetchTool)
 
@@ -49,23 +55,29 @@ func runMCP() error {
 
 type fetchToolInput struct {
 	CompareURLs []string `json:"compare_urls" jsonschema:"GitHub/GitLab compare URLs to analyze together; mixed platforms and hosts allowed"`
-	OutDir      string   `json:"out_dir,omitempty" jsonschema:"directory for index.json, patches/ and docs/; a temporary directory is created when omitted. Custom or default, the directory is registered for the risk-analyst read-confinement hook, which approves reads inside it and denies reads anywhere else"`
 }
 
 func fetchTool(ctx context.Context, req *mcp.CallToolRequest, in fetchToolInput) (*mcp.CallToolResult, *FetchSummary, error) {
 	if len(in.CompareURLs) == 0 {
 		return nil, nil, errors.New("compare_urls is required: pass at least one GitHub/GitLab compare URL")
 	}
-	outDir := in.OutDir
-	if outDir == "" {
-		d, err := os.MkdirTemp("", "soundings-")
-		if err != nil {
-			return nil, nil, err
-		}
-		outDir = d
+	outDir, err := os.MkdirTemp("", "soundings-")
+	if err != nil {
+		return nil, nil, err
+	}
+	// Register before any content is written: the fence then covers the
+	// directory for its whole life, and a crash mid-fetch leaves an entry
+	// the TTL prune will find. Fatal on failure - an unregistered fetch
+	// would have every read of the isolated stage denied with no clue why.
+	if err := registerDir(outDir); err != nil {
+		os.RemoveAll(outDir)
+		return nil, nil, fmt.Errorf("registering fetch directory for the read-confinement hook: %w", err)
 	}
 	summary, err := doFetch(in.CompareURLs, outDir)
 	if err != nil {
+		// A failed fetch must not leave partially fetched, unregistered
+		// content outside the keep-out.
+		releaseDir(outDir)
 		return nil, nil, err
 	}
 	return nil, summary, nil
@@ -76,7 +88,7 @@ type renderToolInput struct {
 	DataDir       string               `json:"data_dir" jsonschema:"the fetch output directory containing index.json"`
 	BlockOn       string               `json:"block_on,omitempty" jsonschema:"severity at or above which a concern blocks the release: critical (default), high, or medium; concerns one level below produce a manual-review verdict"`
 	ExtraGuidance []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
-	ReportPath    string               `json:"report_path,omitempty" jsonschema:"absolute path ending in .md to also write the rendered report to; an existing file is only overwritten if it is a previously generated soundings report. The report is always saved to <data_dir>/report.md regardless"`
+	ReportPath    string               `json:"report_path,omitempty" jsonschema:"absolute path ending in .md to also write the rendered report to; an existing file is only overwritten if it is a previously generated soundings report. The data_dir is deleted after a successful render, so this and the result's report_markdown are how a report outlives the run"`
 }
 
 func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInput) (*mcp.CallToolResult, *RenderResult, error) {

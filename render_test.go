@@ -17,7 +17,9 @@ const validAnalysisJSON = `{
 	"documentation_recommendations": "none"
 }`
 
-// renderFixture builds a minimal fetch data directory doRender can consume.
+// renderFixture builds a minimal, registered fetch data directory doRender
+// can consume. Callers must have pointed SOUNDINGS_CACHE_DIR at a test
+// directory first.
 func renderFixture(t *testing.T) string {
 	t.Helper()
 	dataDir := filepath.Join(t.TempDir(), "soundings-fixture")
@@ -31,35 +33,44 @@ func renderFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dataDir, "guidance.json"), []byte(`[]`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := registerDir(dataDir); err != nil {
+		t.Fatal(err)
+	}
 	return dataDir
 }
 
-func TestDoRenderPersistsAnalysisAndReport(t *testing.T) {
+func TestDoRenderDeletesDataDirOnSuccess(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
 	dataDir := renderFixture(t)
+	if err := os.MkdirAll(filepath.Join(dataDir, "patches", "repo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(t.TempDir(), "soundings-report.md")
 
-	result, validationErrs, err := doRender(validAnalysisJSON, dataDir, renderOpts{})
+	result, validationErrs, err := doRender(validAnalysisJSON, dataDir, renderOpts{ReportPath: reportPath})
 	if err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender: err=%v validationErrs=%v", err, validationErrs)
 	}
 	if result.Verdict != "release" {
 		t.Errorf("verdict = %q, want %q", result.Verdict, "release")
 	}
-
-	saved, err := os.ReadFile(filepath.Join(dataDir, "analysis.json"))
-	if err != nil {
-		t.Fatalf("analysis.json not persisted: %v", err)
-	}
-	if !strings.Contains(string(saved), `"summary": "routine changes"`) {
-		t.Errorf("analysis.json does not contain the analysis: %q", saved)
+	if !strings.HasPrefix(result.ReportMarkdown, reportBanner) {
+		t.Error("report_markdown does not start with the report banner")
 	}
 
-	report, err := os.ReadFile(filepath.Join(dataDir, "report.md"))
-	if err != nil {
-		t.Fatalf("report.md not persisted: %v", err)
+	// The run's products outlive it; the fetch data does not.
+	if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
+		t.Errorf("data dir should be deleted after a successful render (stat err=%v)", err)
 	}
-	if !strings.HasPrefix(string(report), reportBanner) {
-		t.Errorf("report.md does not start with the report banner")
+	content, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("report_path copy must outlive the data dir: %v", err)
+	}
+	if !strings.HasPrefix(string(content), reportBanner) {
+		t.Errorf("report copy does not start with the report banner")
+	}
+	if dirs := allowedDirs(); len(dirs) != 0 {
+		t.Errorf("registry should hold nothing after the run, got %v", dirs)
 	}
 }
 
@@ -67,22 +78,72 @@ func TestDoRenderPersistsAnalysisOnValidationFailure(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
 	dataDir := renderFixture(t)
 
-	// A legacy score-bearing analysis is rejected as an unknown field.
-	_, validationErrs, err := doRender(`{"score": 85}`, dataDir, renderOpts{})
+	// Fields outside the schema are rejected as unknown.
+	_, validationErrs, err := doRender(`{"unrecognized_field": true}`, dataDir, renderOpts{})
 	if err != nil {
 		t.Fatalf("doRender: %v", err)
 	}
 	if len(validationErrs) == 0 {
 		t.Fatal("expected validation errors")
 	}
+	// The directory, its registration, and the rejected analysis must all
+	// survive for the retry loop.
 	if _, err := os.Stat(filepath.Join(dataDir, "analysis.json")); err != nil {
 		t.Errorf("analysis.json should be persisted even when validation fails: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "index.json")); err != nil {
+		t.Errorf("data dir must survive a validation failure for the retry loop: %v", err)
+	}
+	if _, ok := lookupRegistered(dataDir); !ok {
+		t.Error("the data dir must stay registered after a validation failure")
+	}
+}
+
+func TestDoRenderRejectsUnregisteredDataDir(t *testing.T) {
+	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
+	// A plausible-looking directory the helper's fetch never created.
+	dataDir := filepath.Join(t.TempDir(), "archived-run")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "index.json"),
+		[]byte(`{"compare_urls":[],"repos":[],"guidance":[],"docs":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "precious.txt"), []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := doRender(validAnalysisJSON, dataDir, renderOpts{})
+	if err == nil || !strings.Contains(err.Error(), "not a live fetch data directory") {
+		t.Fatalf("expected a not-registered error, got %v", err)
+	}
+	// Nothing was written into or deleted from the unowned directory.
+	if _, err := os.Stat(filepath.Join(dataDir, "precious.txt")); err != nil {
+		t.Errorf("an unregistered directory must be left untouched: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "analysis.json")); !os.IsNotExist(err) {
+		t.Error("analysis.json must not be written into an unregistered directory")
+	}
+}
+
+func TestDoRenderRejectsReportPathInsideDataDir(t *testing.T) {
+	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
+	dataDir := renderFixture(t)
+
+	_, _, err := doRender(validAnalysisJSON, dataDir, renderOpts{ReportPath: filepath.Join(dataDir, "report-copy.md")})
+	if err == nil || !strings.Contains(err.Error(), "inside a live fetch data directory") {
+		t.Fatalf("expected a report_path-inside-data_dir error, got %v", err)
+	}
+	// The run is not consumed by the failed attempt: still on disk and
+	// registered, so a corrected report_path can be retried.
+	if _, ok := lookupRegistered(dataDir); !ok {
+		t.Error("the data dir must stay registered after a rejected report_path")
 	}
 }
 
 func TestDoRenderComputesVerdictFromConcerns(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
-	dataDir := renderFixture(t)
 
 	analysis := `{
 		"model": "claude-test-9",
@@ -94,7 +155,7 @@ func TestDoRenderComputesVerdictFromConcerns(t *testing.T) {
 		"documentation_recommendations": "none"
 	}`
 
-	result, validationErrs, err := doRender(analysis, dataDir, renderOpts{})
+	result, validationErrs, err := doRender(analysis, renderFixture(t), renderOpts{})
 	if err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender: err=%v validationErrs=%v", err, validationErrs)
 	}
@@ -105,8 +166,9 @@ func TestDoRenderComputesVerdictFromConcerns(t *testing.T) {
 		t.Error("report should cite the concern that drove the verdict")
 	}
 
-	// The same concern blocks outright under a stricter policy.
-	result, validationErrs, err = doRender(analysis, dataDir, renderOpts{BlockOn: "high"})
+	// The same concern blocks outright under a stricter policy. (A fresh
+	// fixture: a successful render deletes its data directory.)
+	result, validationErrs, err = doRender(analysis, renderFixture(t), renderOpts{BlockOn: "high"})
 	if err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender (block_on=high): err=%v validationErrs=%v", err, validationErrs)
 	}
@@ -124,26 +186,18 @@ func TestDoRenderRejectsInvalidBlockOn(t *testing.T) {
 	}
 }
 
-func TestDoRenderWritesReportCopy(t *testing.T) {
+func TestDoRenderOverwritesOwnReportCopy(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
-	dataDir := renderFixture(t)
 	reportPath := filepath.Join(t.TempDir(), "soundings-report.md")
-
 	opts := renderOpts{ReportPath: reportPath}
-	if _, validationErrs, err := doRender(validAnalysisJSON, dataDir, opts); err != nil || len(validationErrs) > 0 {
+
+	if _, validationErrs, err := doRender(validAnalysisJSON, renderFixture(t), opts); err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender: err=%v validationErrs=%v", err, validationErrs)
 	}
 
-	content, err := os.ReadFile(reportPath)
-	if err != nil {
-		t.Fatalf("report copy not written: %v", err)
-	}
-	if !strings.HasPrefix(string(content), reportBanner) {
-		t.Errorf("report copy does not start with the report banner")
-	}
-
-	// A second run may overwrite its own report.
-	if _, validationErrs, err := doRender(validAnalysisJSON, dataDir, opts); err != nil || len(validationErrs) > 0 {
+	// A later run may overwrite a previously generated soundings report.
+	// (A fresh fixture: a successful render deletes its data directory.)
+	if _, validationErrs, err := doRender(validAnalysisJSON, renderFixture(t), opts); err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender (overwrite): err=%v validationErrs=%v", err, validationErrs)
 	}
 }

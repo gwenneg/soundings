@@ -37,7 +37,7 @@ func TestRedactSecretsReplacesKnownFormats(t *testing.T) {
 func TestRedactSecretsLeavesOrdinaryTextAlone(t *testing.T) {
 	for _, in := range []string{
 		"commit 76dffc9a1b2c3d4e5f60718293a4b5c6d7e8f901 touches auth/handler.go",
-		"score lowered because internal/http/httpclient.go changes retry timeouts",
+		"severity raised because internal/http/httpclient.go changes retry timeouts",
 		"the sk-learn dependency was bumped",           // not an API key prefix
 		"AKIA is mentioned in the docs",                // too short for a key id
 		"config key `gitlab_token` read from the env",  // a name, not a value
