@@ -7,8 +7,8 @@ ahead before committing a ship to a course. Soundings does the same for a
 release: point it at one or more GitHub/GitLab compare URLs and it reads
 the diffs, commit history, and reviewer discussion, then hands back one
 clear verdict — release, manual review, or no-go, computed from the
-severities of the risks it found and citing each one that drove it — and
-a report specific enough to act on: named files, named functions,
+severities of the risks it found and saying what drove it — and a
+report specific enough to act on: named files, named functions,
 concrete commands to run before you ship.
 
 ```
@@ -55,15 +55,12 @@ anyway to fetch the diff.
 
 ## 🎯 Summary
 
-**Recommendation:** ⚠️ MANUAL REVIEW REQUIRED
-
-Driven by:
-- ⚠️ `internal/webhook/retry.go` raises the max retry count from 3 to 8
-  with no ceiling on total wall-clock time — no test exercises the new
-  upper bound.
-
 A well-tested rate-limiter change, but the new retry logic in the payment
 webhook handler has no test covering the exponential-backoff cap.
+
+**Recommendation:** ⚠️ MANUAL REVIEW REQUIRED
+
+Driven by 1 high concern — detailed in Risk Analysis below.
 
 ## 🔍 Risk Analysis
 

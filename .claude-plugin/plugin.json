@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "soundings",
   "displayName": "Soundings",
-  "description": "Take soundings before you ship. Point it at one or more GitHub/GitLab compare URLs and get a clear release verdict - release, manual review, or no-go - computed from the severities of the risks found and citing each risk that drove it, plus a report specific enough to act on: named files and functions, concrete pre-release checks, and compound-risk detection across repositories in multi-service deployments. No external LLM API, no service-account key, no Docker image - the Claude agent already in your session does the analysis in an isolated read-only stage hardened against prompt injection, a small Go helper does the fetching, and a normal run needs no permission prompts.",
+  "description": "Take soundings before you ship. Point it at one or more GitHub/GitLab compare URLs and get a clear release verdict - release, manual review, or no-go - computed from the severities of the risks found and saying what drove it, plus a report specific enough to act on: named files and functions, concrete pre-release checks, and compound-risk detection across repositories in multi-service deployments. No external LLM API, no service-account key, no Docker image - the Claude agent already in your session does the analysis in an isolated read-only stage hardened against prompt injection, a small Go helper does the fetching, and a normal run needs no permission prompts.",
   "author": {
     "name": "Gwenneg Lepage",
     "url": "https://github.com/gwenneg"
