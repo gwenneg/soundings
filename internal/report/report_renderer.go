@@ -30,6 +30,7 @@ func templateFuncs() template.FuncMap {
 		"hasPrefix":           strings.HasPrefix,
 		"escapePipes":         escapePipes,
 		"escapeCell":          escapeCell,
+		"severityEmoji":       severityEmoji,
 		"authorizationStatus": authorizationStatus,
 		"guidanceStatus":      guidanceStatus,
 		"prLink":              prLink,
@@ -71,10 +72,10 @@ func authorizationStatus(isAuthorized bool) string {
 // caller, not checked - so they get their own label rather than reusing
 // "Authorized", which would otherwise misleadingly imply the same
 // verification (and, per the report's own caption, that they were used in
-// scoring - they aren't).
+// the analysis - they aren't).
 func guidanceStatus(g types.UserGuidance) string {
 	if g.IsExternal {
-		return "🌐 External (not scored)"
+		return "🌐 External (not analyzed)"
 	}
 	return authorizationStatus(g.IsAuthorized)
 }
@@ -166,13 +167,97 @@ func StripMarkdownCodeBlocks(content string) string {
 	return strings.TrimSpace(trimmed)
 }
 
-func getReleaseRecommendation(score, autoDeployThreshold, reviewRequiredThreshold int) string {
-	if score >= autoDeployThreshold {
+// Verdict is the release recommendation computed from the analysis's
+// structured risk facts. It is the report's single decision signal.
+type Verdict string
+
+const (
+	VerdictRelease        Verdict = "release"
+	VerdictReview         Verdict = "review"
+	VerdictNotRecommended Verdict = "not_recommended"
+)
+
+// DefaultBlockOn is the severity at which a concern blocks the release when
+// the caller doesn't set ReportConfig.BlockOn.
+const DefaultBlockOn = "critical"
+
+// severityRank orders severities most-severe-first. An unrecognized
+// severity is treated as rank 0 (critical) by ComputeVerdict - fail toward
+// caution; validation upstream guarantees the enum for the helper's own
+// runs, so this only matters for library callers.
+var severityRank = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+func rankOf(severity string) int {
+	if r, ok := severityRank[severity]; ok {
+		return r
+	}
+	return severityRank["critical"]
+}
+
+// ComputeVerdict derives the release verdict from the analysis's concerns
+// and its critical ("complete before release") action items, under the
+// blockOn policy - the severity at or above which a concern blocks the
+// release outright. Concerns exactly one rank below blockOn require manual
+// review, and outstanding critical action items escalate an otherwise clean
+// release to manual review. The returned reasons are display-ready lines
+// naming exactly what drove the verdict; empty means nothing blocked it.
+//
+// This is the "computed, not written" half of the report's promise: the
+// verdict derives only from schema-validated severities, each attached to a
+// human-checkable description, never from analysis prose.
+func ComputeVerdict(concerns []RiskConcern, criticalActionItems []string, blockOn string) (Verdict, []string) {
+	blockRank, ok := severityRank[blockOn]
+	if !ok {
+		blockRank = severityRank[DefaultBlockOn]
+	}
+
+	var blocking, reviewable []string
+	for _, c := range concerns {
+		switch r := rankOf(c.Severity); {
+		case r <= blockRank:
+			blocking = append(blocking, severityEmoji(c.Severity)+" "+c.Description)
+		case r == blockRank+1:
+			reviewable = append(reviewable, severityEmoji(c.Severity)+" "+c.Description)
+		}
+	}
+
+	if len(blocking) > 0 {
+		return VerdictNotRecommended, blocking
+	}
+	if len(reviewable) > 0 {
+		return VerdictReview, reviewable
+	}
+	if len(criticalActionItems) > 0 {
+		reasons := make([]string, 0, len(criticalActionItems))
+		for _, item := range criticalActionItems {
+			reasons = append(reasons, "📋 Complete before release: "+item)
+		}
+		return VerdictReview, reasons
+	}
+	return VerdictRelease, nil
+}
+
+func verdictBanner(v Verdict) string {
+	switch v {
+	case VerdictRelease:
 		return "✅ Recommended for release"
-	} else if score >= reviewRequiredThreshold {
+	case VerdictReview:
 		return "⚠️ **MANUAL REVIEW REQUIRED**"
-	} else {
+	default:
 		return "🚫 **RELEASE NOT RECOMMENDED**"
+	}
+}
+
+func severityEmoji(severity string) string {
+	switch severity {
+	case "high":
+		return "⚠️"
+	case "medium":
+		return "🟡"
+	case "low":
+		return "🟢"
+	default: // critical, or unrecognized (treated as critical)
+		return "🔥"
 	}
 }
 
@@ -183,7 +268,6 @@ type StructuredAnalysis struct {
 	// Required by the render command's validation; the renderer itself
 	// tolerates absence for library callers.
 	Model                        string           `json:"model,omitempty"`
-	Score                        int              `json:"score"`
 	Summary                      string           `json:"summary"`
 	RiskSummary                  RiskSummary      `json:"risk_summary"`
 	ActionItems                  ActionItems      `json:"action_items"`
@@ -226,14 +310,16 @@ type ReportMetadata struct {
 
 // ReportConfig holds all configuration and data needed for report generation
 type ReportConfig struct {
-	LLMResponse             string
-	Metadata                *ReportMetadata
-	Comparisons             []*types.Comparison
-	Documentation           []*types.Documentation
-	UserGuidance            []types.UserGuidance
-	AutoDeployThreshold     int
-	ReviewRequiredThreshold int
-	TruncationInfo          *TruncationInfo
+	LLMResponse   string
+	Metadata      *ReportMetadata
+	Comparisons   []*types.Comparison
+	Documentation []*types.Documentation
+	UserGuidance  []types.UserGuidance
+
+	// BlockOn is the severity at or above which a concern blocks the
+	// release ("critical", "high", or "medium"); empty means DefaultBlockOn.
+	BlockOn        string
+	TruncationInfo *TruncationInfo
 }
 
 // TruncationInfo summarizes patch truncation applied at fetch time (see
@@ -253,19 +339,20 @@ type TemplateData struct {
 	Comparisons           []*types.Comparison
 	Documentation         []*types.Documentation
 	ReleaseRecommendation string
+	VerdictReasons        []string             // display-ready lines naming what drove the verdict
 	AllUserGuidance       []types.UserGuidance // All user guidance for comprehensive reporting
 	TruncationInfo        *TruncationInfo
 }
 
 // GenerateReport parses LLM response and generates the final report
-func GenerateReport(config *ReportConfig) (score int, report string, err error) {
+func GenerateReport(config *ReportConfig) (verdict Verdict, report string, err error) {
 	// Strip markdown code blocks if present (LLMs sometimes wrap JSON in ```json ... ```)
 	jsonContent := StripMarkdownCodeBlocks(config.LLMResponse)
 
 	// Parse the structured JSON response
 	var analysis StructuredAnalysis
 	if err := json.Unmarshal([]byte(jsonContent), &analysis); err != nil {
-		return 0, "", fmt.Errorf("failed to parse JSON response: %w", err)
+		return "", "", fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	// The footer credits the model stated by the analysis itself: the
@@ -280,8 +367,13 @@ func GenerateReport(config *ReportConfig) (score int, report string, err error) 
 		return config.UserGuidance[i].Date.Before(config.UserGuidance[j].Date)
 	})
 
-	// Determine release recommendation based on score
-	recommendation := getReleaseRecommendation(analysis.Score, config.AutoDeployThreshold, config.ReviewRequiredThreshold)
+	// Compute the verdict from the concern severities and the block_on
+	// policy - never from analysis prose.
+	blockOn := config.BlockOn
+	if blockOn == "" {
+		blockOn = DefaultBlockOn
+	}
+	verdict, reasons := ComputeVerdict(analysis.RiskSummary.Concerns, analysis.ActionItems.Critical, blockOn)
 
 	// Create template data
 	templateData := &TemplateData{
@@ -289,7 +381,8 @@ func GenerateReport(config *ReportConfig) (score int, report string, err error) 
 		Metadata:              config.Metadata,
 		Comparisons:           config.Comparisons,
 		Documentation:         config.Documentation,
-		ReleaseRecommendation: recommendation,
+		ReleaseRecommendation: verdictBanner(verdict),
+		VerdictReasons:        reasons,
 		AllUserGuidance:       config.UserGuidance,
 		TruncationInfo:        config.TruncationInfo,
 	}
@@ -297,8 +390,8 @@ func GenerateReport(config *ReportConfig) (score int, report string, err error) 
 	// Execute pre-compiled template
 	var buf bytes.Buffer
 	if err := reportTemplate.Execute(&buf, templateData); err != nil {
-		return 0, "", fmt.Errorf("failed to execute report template: %w", err)
+		return "", "", fmt.Errorf("failed to execute report template: %w", err)
 	}
 
-	return analysis.Score, buf.String(), nil
+	return verdict, buf.String(), nil
 }

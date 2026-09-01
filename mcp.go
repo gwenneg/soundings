@@ -40,8 +40,8 @@ func runMCP() error {
 		Description: "Validate a structured release analysis JSON and render the final " +
 			"markdown report. The analysis must contain the model field stated by the " +
 			"risk-analyst agent; validation failures are returned as field-level errors so " +
-			"the analysis can be corrected and re-run. The recommendation banner is " +
-			"computed from the score and thresholds, never from analysis prose.",
+			"the analysis can be corrected and re-run. The release verdict is computed " +
+			"from the concern severities and the block_on policy, never from analysis prose.",
 	}, renderTool)
 
 	return server.Run(context.Background(), &mcp.StdioTransport{})
@@ -72,12 +72,11 @@ func fetchTool(ctx context.Context, req *mcp.CallToolRequest, in fetchToolInput)
 }
 
 type renderToolInput struct {
-	AnalysisJSON   string               `json:"analysis_json" jsonschema:"the structured analysis JSON produced by the risk-analyst stage, passed verbatim"`
-	DataDir        string               `json:"data_dir" jsonschema:"the fetch output directory containing index.json"`
-	AutoDeploy     *int                 `json:"auto_deploy,omitempty" jsonschema:"score at or above which release is recommended (default 80)"`
-	ReviewRequired *int                 `json:"review_required,omitempty" jsonschema:"score at or above which manual review (instead of no-go) is recommended (default 60)"`
-	ExtraGuidance  []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
-	ReportPath     string               `json:"report_path,omitempty" jsonschema:"absolute path ending in .md to also write the rendered report to; an existing file is only overwritten if it is a previously generated soundings report. The report is always saved to <data_dir>/report.md regardless"`
+	AnalysisJSON  string               `json:"analysis_json" jsonschema:"the structured analysis JSON produced by the risk-analyst stage, passed verbatim"`
+	DataDir       string               `json:"data_dir" jsonschema:"the fetch output directory containing index.json"`
+	BlockOn       string               `json:"block_on,omitempty" jsonschema:"severity at or above which a concern blocks the release: critical (default), high, or medium; concerns one level below produce a manual-review verdict"`
+	ExtraGuidance []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
+	ReportPath    string               `json:"report_path,omitempty" jsonschema:"absolute path ending in .md to also write the rendered report to; an existing file is only overwritten if it is a previously generated soundings report. The report is always saved to <data_dir>/report.md regardless"`
 }
 
 func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInput) (*mcp.CallToolResult, *RenderResult, error) {
@@ -85,16 +84,9 @@ func renderTool(ctx context.Context, req *mcp.CallToolRequest, in renderToolInpu
 		return nil, nil, errors.New("analysis_json and data_dir are required")
 	}
 	opts := renderOpts{
-		AutoDeploy:     80,
-		ReviewRequired: 60,
-		ExtraGuidance:  in.ExtraGuidance,
-		ReportPath:     in.ReportPath,
-	}
-	if in.AutoDeploy != nil {
-		opts.AutoDeploy = *in.AutoDeploy
-	}
-	if in.ReviewRequired != nil {
-		opts.ReviewRequired = *in.ReviewRequired
+		BlockOn:       in.BlockOn,
+		ExtraGuidance: in.ExtraGuidance,
+		ReportPath:    in.ReportPath,
 	}
 
 	result, validationErrs, err := doRender(in.AnalysisJSON, in.DataDir, opts)

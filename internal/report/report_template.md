@@ -1,12 +1,21 @@
 **⚠️ AI-Generated Report** — This report is AI-generated and advisory. Always review AI-generated content prior to use.
 
-# 🚀 Release Confidence Report
+# 🚀 Release Readiness Report
 
 ## 🎯 Summary
 
-**Confidence score:** {{.Analysis.Score}}/100
-
 **Recommendation:** {{.ReleaseRecommendation}}
+
+{{- if .VerdictReasons}}
+
+Driven by:
+{{- range .VerdictReasons}}
+- {{.}}
+{{- end}}
+{{- else}}
+
+No blocking concerns found.
+{{- end}}
 
 {{.Analysis.Summary}}
 
@@ -48,15 +57,7 @@ only the middle section is omitted.
 | | Details |
 |----------|---------|
 {{- range .Analysis.RiskSummary.Concerns}}
-{{- if eq .Severity "critical"}}
-| 🔥 | {{.Description}} |
-{{- else if eq .Severity "high"}}
-| ⚠️ | {{.Description}} |
-{{- else if eq .Severity "medium"}}
-| 🟡 | {{.Description}} |
-{{- else}}
-| 🟢 | {{.Description}} |
-{{- end}}
+| {{severityEmoji .Severity}} | {{escapeCell .Description}} |
 {{- end}}
 {{- end}}
 
@@ -110,7 +111,7 @@ The following user guidance was provided in GitLab MR and GitHub PR discussions:
 | {{escapeCell .Content}} | {{formatAuthor .Author .CommentURL}} | {{formatDate .Date}} | {{guidanceStatus .}} | [View]({{.CommentURL}}) |
 {{- end}}
 
-**Note:** Only authorized `/soundings note` guidance is used in the analysis. For GitHub PRs, that means the PR author or an approving reviewer with repository authority. For GitLab MRs, the MR author or anyone in the approver list. Unauthorized guidance is listed here for transparency but is ignored during scoring. External guidance is supplied directly by the caller rather than sourced from a fetched PR/MR - it is neither verified nor used in scoring, and is listed here for transparency only.
+**Note:** Only authorized `/soundings note` guidance is used in the analysis. For GitHub PRs, that means the PR author or an approving reviewer with repository authority. For GitLab MRs, the MR author or anyone in the approver list. Unauthorized guidance is listed here for transparency but is ignored during the analysis. External guidance is supplied directly by the caller rather than sourced from a fetched PR/MR - it is neither verified nor used in the analysis, and is listed here for transparency only.
 {{- end}}
 
 ---
@@ -215,7 +216,7 @@ No repository documentation was found or analyzed.
 <details>
 <summary><strong>📈 Want Better Analysis Results?</strong></summary>
 
-Learn how to improve your confidence scores and get more accurate analysis:
+Learn how to get more accurate verdicts and sharper analysis:
 
 👉 **[Guide: Improving Your Release Confidence Analysis](https://github.com/gwenneg/soundings/blob/main/docs/IMPROVING_ANALYSIS.md)**
 

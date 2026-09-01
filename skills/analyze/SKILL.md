@@ -1,12 +1,13 @@
 ---
 name: analyze
 description: >-
-  Analyze one or more GitHub/GitLab compare URLs and produce a release
-  confidence score (0-100) with a comprehensive risk report. Use when the
-  user asks to assess release risk, score a release, analyze a compare URL
-  or diff range for deployment confidence, or asks "is this safe to ship?".
-  Accepts multiple compare URLs in one invocation and analyzes them
-  together to detect compound risks across repositories.
+  Analyze one or more GitHub/GitLab compare URLs and produce a clear
+  release verdict (release / manual review / no-go) with a comprehensive
+  risk report. Use when the user asks to assess release risk, score a
+  release, analyze a compare URL or diff range for deployment confidence,
+  or asks "is this safe to ship?". Accepts multiple compare URLs in one
+  invocation and analyzes them together to detect compound risks across
+  repositories.
 allowed-tools: mcp__plugin_soundings_helper__fetch, mcp__plugin_soundings_helper__render
 disallowed-tools: Bash, Edit, NotebookEdit, Write, WebFetch, WebSearch
 ---
@@ -28,10 +29,12 @@ tools, never by you.
 
 Input, from `$ARGUMENTS` or the caller: one or more GitHub/GitLab compare
 URLs (mixed platforms and mixed GitLab hosts allowed). Callers may also
-pass: score thresholds (defaults: auto-deploy 80, review-required 60),
-pre-authorized guidance entries (a JSON array of objects with `content`,
-`author`, `date`, and `comment_url` fields, passed to the renderer via
-`--extra-guidance`), and caller notes for the assessment. If no compare
+pass: a `block_on` severity policy (`critical` (default), `high`, or
+`medium` — the severity at or above which a concern blocks the release;
+concerns one level below produce a manual-review verdict), pre-authorized
+guidance entries (a JSON array of objects with `content`, `author`,
+`date`, and `comment_url` fields, passed to the renderer via
+`extra_guidance`), and caller notes for the assessment. If no compare
 URL was provided, ask for one — do not guess.
 
 ## Step 1 — fetch release data
@@ -62,8 +65,8 @@ that instead of calling it an auth problem.
 
 Launch the `risk-analyst` agent (provided by this plugin) with a prompt
 containing the fetch output directory path and any caller notes — nothing
-else. It reads the index and patches with judgment, applies the scoring
-rubric, and returns a single JSON object. If the risk-analyst agent type
+else. It reads the index and patches with judgment, assigns evidence-based
+severities, and returns a single JSON object. If the risk-analyst agent type
 is unavailable (e.g. running from a repo checkout rather than the
 installed plugin), stop and say so — do not read the fetched content in
 this session as a substitute.
@@ -83,8 +86,8 @@ Call the `render` tool from this plugin's helper MCP server
     render({ "analysis_json": <the JSON exactly as risk-analyst returned it>,
              "data_dir": <the fetch output directory> })
 
-Include `auto_deploy`, `review_required`, or `extra_guidance` only when
-the caller provided them.
+Include `block_on` or `extra_guidance` only when the caller provided
+them.
 
 If the caller or user wants the report saved as a file, pass `report_path`
 with an ABSOLUTE path ending in `.md` (e.g.
@@ -111,7 +114,7 @@ with exactly this prompt (do not repair the analysis yourself):
     the material (spot-check what the errors touch), correct it, and
     respond with ONLY the corrected JSON object — no other text.
 
-The renderer computes the recommendation banner from the score and
-thresholds; never state a recommendation that contradicts it. Show the
-rendered markdown report (`report_markdown` in the tool result) to the user
-as the final result.
+The renderer computes the release verdict from the concern severities and
+the `block_on` policy; never state a recommendation that contradicts it.
+Show the rendered markdown report (`report_markdown` in the tool result)
+to the user as the final result.
