@@ -5,30 +5,18 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 )
 
-// runHook implements the PreToolUse confinement hook for the risk-analyst
-// agent: allow Read, Grep, and Glob inside the fetch output directories
-// registered by this binary (see registry.go), deny them everywhere else.
-// The risk-analyst agent reads externally-authored content, so an injection
-// inside a diff could otherwise steer it to read or search secrets elsewhere
-// on disk (~/.ssh, .env files) and leak them into the analysis it returns.
-// The agent's frontmatter already limits it to Read/Grep/Glob; this hook
-// limits where those tools may point.
-//
-// The explicit "allow" also skips the interactive permission prompt for
-// in-bounds reads (the fetch directory lives outside the session's working
-// directory, where reads would otherwise prompt), so the isolated stage
-// runs without user interaction. Deny and ask rules from the user's
-// settings still apply regardless of the allow - the hook can only remove
-// the prompt, not override a configured deny.
-//
-// The hook also pre-approves this plugin's own helper MCP tools (fetch and
-// render), the other prompt source of a skill run that plugin-shipped
-// configuration can address.
-//
-// For every other caller the hook emits nothing ("no opinion"), leaving the
-// session's normal permission flow untouched.
+// runHook is the PreToolUse confinement hook around the registered fetch
+// directories (see registry.go), in both directions: the risk-analyst
+// agent may Read/Grep/Glob only inside them (the explicit allow also
+// skips the permission prompt, so the isolated stage runs unattended),
+// and every other agent - the orchestrating session included - is denied
+// those tools wherever they could reach the fetched, externally-authored
+// content. It also pre-approves this plugin's own helper MCP tools.
+// Everything else gets no opinion; user-configured deny and ask rules
+// always override an allow.
 func runHook(stdin io.Reader, stdout io.Writer) error {
 	var in struct {
 		ToolName  string `json:"tool_name"`
@@ -37,50 +25,163 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 		ToolInput struct {
 			FilePath string `json:"file_path"` // Read
 			Path     string `json:"path"`      // Grep, Glob
+			Pattern  string `json:"pattern"`   // Glob; may be absolute, overriding path as the search root
 		} `json:"tool_input"`
 	}
 	if err := json.NewDecoder(stdin).Decode(&in); err != nil {
 		return fmt.Errorf("parsing hook input: %w", err)
 	}
-	// This plugin's own helper MCP tools are pre-approved: the skill's
-	// allowed-tools frontmatter constrains what the turn may use but is not
-	// a permission grant, so without this the fetch and render calls prompt
-	// like any MCP tool - and a plugin cannot ship permission rules. These
-	// calls come from the main session (no agent_type), so this check runs
-	// before the risk-analyst gate below. User-configured deny and ask
-	// rules still apply regardless of the allow.
+	// Pre-approved because a plugin cannot ship permission rules, and the
+	// skill's allowed-tools frontmatter is not a permission grant.
 	if in.ToolName == "mcp__plugin_soundings_helper__fetch" ||
 		in.ToolName == "mcp__plugin_soundings_helper__render" {
 		return emitDecision(stdout, "allow",
 			"soundings: the plugin's own helper MCP tool is pre-approved")
-	}
-	// Exact match only: a namespaced risk-analyst from any other plugin
-	// ("otherplugin:risk-analyst") must not inherit this hook's approvals.
-	if in.AgentType != "risk-analyst" && in.AgentType != "soundings:risk-analyst" {
-		return nil
 	}
 	var path string
 	switch in.ToolName {
 	case "Read":
 		path = in.ToolInput.FilePath
 	case "Grep", "Glob":
-		// Path is optional for these tools and defaults to the session's
-		// working directory when omitted - that default is never the fetch
-		// output directory, so an empty path is denied same as any other
-		// path outside it.
+		// Optional; defaults to the session's working directory.
 		path = in.ToolInput.Path
 	default:
 		return nil
 	}
-	target := resolveForCheck(path, in.CWD)
-	for _, dir := range allowedDirs() {
-		if underDir(target, dir) {
+
+	// Exact match only: a namespaced risk-analyst from any other plugin
+	// must not inherit this hook's approvals.
+	isRiskAnalyst := in.AgentType == "risk-analyst" || in.AgentType == "soundings:risk-analyst"
+
+	authorized, fenced := registryDirs()
+
+	shown := path
+	if shown == "" {
+		// Grep's pattern is a regex, not a location - show the cwd instead.
+		if in.ToolName == "Glob" && in.ToolInput.Pattern != "" {
+			shown = in.ToolInput.Pattern
+		} else {
+			shown = in.CWD
+		}
+	}
+
+	// No live fetch data anywhere: the outcome is fixed, skip resolution.
+	if len(fenced) == 0 && len(authorized) == 0 {
+		if isRiskAnalyst {
+			return emitDecision(stdout, "deny", fmt.Sprintf(
+				"soundings: the risk-analyst agent may only read the fetch data directory registered for this run; %q is outside it", shown))
+		}
+		return nil
+	}
+
+	target := resolvePath(path, in.CWD)
+
+	pattern := in.ToolInput.Pattern
+	patternRoot, patternBounded := "", true
+	if in.ToolName == "Glob" && pattern != "" {
+		patternRoot, patternBounded = globPatternRoot(target, pattern)
+	}
+
+	if isRiskAnalyst {
+		// Never fold in the allow direction (see underDir).
+		var inBounds bool
+		switch {
+		case !patternBounded:
+			inBounds = false
+		case patternRoot == "":
+			inBounds = insideAny(target, authorized, false)
+		case filepath.IsAbs(pattern):
+			// The absolute pattern is the effective root; path, when also
+			// given, must agree with it.
+			inBounds = insideAny(patternRoot, authorized, false) &&
+				(path == "" || insideAny(target, authorized, false))
+		default:
+			inBounds = insideAny(target, authorized, false) && insideAny(patternRoot, authorized, false)
+		}
+		if inBounds {
 			return emitDecision(stdout, "allow",
 				"soundings: read inside the registered fetch data directory")
 		}
+		return emitDecision(stdout, "deny", fmt.Sprintf(
+			"soundings: the risk-analyst agent may only read the fetch data directory registered for this run; %q is not confined to it", shown))
 	}
-	return emitDecision(stdout, "deny", fmt.Sprintf(
-		"soundings: the risk-analyst agent may only read the fetch data directory registered for this run; %q is outside it", path))
+
+	// Keep-out for everyone else. Read touches content only from inside a
+	// directory; Grep and Glob search recursively, so a root at or above a
+	// fenced directory reaches it too. An unbounded pattern is confined by
+	// nothing, so it is denied whenever any fence exists.
+	reaches := insideAny(target, fenced, true)
+	if in.ToolName != "Read" {
+		reaches = reaches || containsAny(target, fenced, true) || !patternBounded ||
+			(patternRoot != "" && (insideAny(patternRoot, fenced, true) || containsAny(patternRoot, fenced, true)))
+	}
+	if reaches {
+		return emitDecision(stdout, "deny", fmt.Sprintf(
+			"soundings: %q may reach inside a registered fetch data directory holding externally-authored release data; only the isolated risk-analyst stage may read it - inspect the files outside this session if you need to", shown))
+	}
+	return nil
+}
+
+// insideAny reports whether p is one of dirs or inside one; fold as in
+// underDir (true only for deny-direction checks).
+func insideAny(p string, dirs []string, fold bool) bool {
+	for _, dir := range dirs {
+		if underDir(p, dir, fold) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsAny reports whether any of dirs lies under p.
+func containsAny(p string, dirs []string, fold bool) bool {
+	for _, dir := range dirs {
+		if underDir(dir, p, fold) {
+			return true
+		}
+	}
+	return false
+}
+
+// globPatternRoot resolves the deepest directory a glob pattern is
+// anchored to: its static prefix, anchored at base when relative. The raw
+// pattern is parsed, never pre-Cleaned - Clean would cancel a ".." against
+// a literal "**" segment and hide an escape. The second result is false
+// when no static prefix can bound the pattern's reach: a brace group that
+// may expand across separators (a "/" after it, e.g. "{/etc,x}/**"), or a
+// ".." at or after the first wildcard (a zero-match "**" lets it climb
+// out). A separator-free group like "*.{ts,tsx}" stays bounded - it
+// expands to filenames, not paths.
+func globPatternRoot(base, pattern string) (string, bool) {
+	if i := strings.Index(pattern, "{"); i >= 0 {
+		if strings.Contains(pattern[i:], "/") || strings.Contains(pattern, "..") {
+			return "", false
+		}
+	}
+	prefix := ""
+	if strings.HasPrefix(pattern, "/") {
+		prefix = string(filepath.Separator)
+	}
+	seenWildcard := false
+	for _, seg := range strings.Split(pattern, "/") {
+		if seg == "" || seg == "." {
+			continue
+		}
+		if strings.ContainsAny(seg, `*?[{`) {
+			seenWildcard = true
+			continue
+		}
+		if seg == ".." && seenWildcard {
+			return "", false
+		}
+		if !seenWildcard {
+			prefix = filepath.Join(prefix, seg)
+		}
+	}
+	if prefix == "" {
+		prefix = "."
+	}
+	return resolvePath(prefix, base), true
 }
 
 func emitDecision(stdout io.Writer, decision, reason string) error {
@@ -93,16 +194,15 @@ func emitDecision(stdout io.Writer, decision, reason string) error {
 	})
 }
 
-// resolveForCheck turns the tool-call path into the absolute, cleaned,
-// symlink-resolved form that registry entries use, so neither a relative
-// path, a ".." segment, nor a symlink inside an allowed directory can
-// disguise a target outside it. An empty or unresolvable path resolves to
-// something outside every registered directory and is therefore denied.
-func resolveForCheck(path, cwd string) string {
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(cwd, path)
+// resolvePath is the one normalization every path compared against
+// registry entries must share - absolute against base, cleaned, symlinks
+// resolved on existing ancestors - so a relative path, a ".." segment, or
+// a symlink cannot disguise a target's real location.
+func resolvePath(p, base string) string {
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(base, p)
 	}
-	return resolveExisting(filepath.Clean(path))
+	return resolveExisting(filepath.Clean(p))
 }
 
 // resolveExisting resolves symlinks on the deepest existing ancestor of p
