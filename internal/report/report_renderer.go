@@ -181,17 +181,81 @@ const (
 // the caller doesn't set ReportConfig.BlockOn.
 const DefaultBlockOn = "critical"
 
-// severityRank orders severities most-severe-first. An unrecognized
-// severity is treated as rank 0 (critical) by ComputeVerdict - fail toward
-// caution; validation upstream guarantees the enum for the helper's own
-// runs, so this only matters for library callers.
-var severityRank = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3}
+// severityTable is the single source of truth for the concern severity
+// enum, ordered most-severe-first (index = rank). Everything else - rank
+// comparison, emoji, validation sets, error messages - derives from it.
+var severityTable = []struct {
+	Name  string
+	Emoji string
+}{
+	{"critical", "🔥"},
+	{"high", "⚠️"},
+	{"medium", "🟡"},
+	{"low", "🟢"},
+}
 
+// rankOf returns the severity's rank, most-severe-first. An unrecognized
+// severity gets rank 0 (critical) - fail toward caution; validation
+// upstream guarantees the enum for the helper's own runs, so this only
+// matters for library callers.
 func rankOf(severity string) int {
-	if r, ok := severityRank[severity]; ok {
-		return r
+	for i, s := range severityTable {
+		if s.Name == severity {
+			return i
+		}
 	}
-	return severityRank["critical"]
+	return 0
+}
+
+// SeverityNames returns the recognized concern severities, most-severe-first.
+func SeverityNames() []string {
+	names := make([]string, len(severityTable))
+	for i, s := range severityTable {
+		names[i] = s.Name
+	}
+	return names
+}
+
+// IsValidSeverity reports whether s is a recognized concern severity.
+func IsValidSeverity(s string) bool {
+	for _, e := range severityTable {
+		if e.Name == s {
+			return true
+		}
+	}
+	return false
+}
+
+// BlockOnSeverities returns the severities valid as a block_on policy:
+// every severity except the lowest, which cannot block (a policy where
+// even the mildest concern blocks every release would make the verdict
+// meaningless).
+func BlockOnSeverities() []string {
+	names := SeverityNames()
+	return names[:len(names)-1]
+}
+
+// IsValidBlockOn reports whether s is a valid block_on policy value;
+// empty means "use DefaultBlockOn" and is valid.
+func IsValidBlockOn(s string) bool {
+	if s == "" {
+		return true
+	}
+	for _, name := range BlockOnSeverities() {
+		if name == s {
+			return true
+		}
+	}
+	return false
+}
+
+// VerdictReason is one driver of the verdict: a concern at or near the
+// blocking severity, or (with an empty Severity) an outstanding critical
+// action item. Presentation - emoji, wording, escaping - is the
+// template's job, not this type's.
+type VerdictReason struct {
+	Severity string
+	Text     string
 }
 
 // ComputeVerdict derives the release verdict from the analysis's concerns
@@ -199,25 +263,24 @@ func rankOf(severity string) int {
 // blockOn policy - the severity at or above which a concern blocks the
 // release outright. Concerns exactly one rank below blockOn require manual
 // review, and outstanding critical action items escalate an otherwise clean
-// release to manual review. The returned reasons are display-ready lines
-// naming exactly what drove the verdict; empty means nothing blocked it.
+// release to manual review. The returned reasons name exactly what drove
+// the verdict; empty means nothing blocked it.
 //
 // This is the "computed, not written" half of the report's promise: the
 // verdict derives only from schema-validated severities, each attached to a
 // human-checkable description, never from analysis prose.
-func ComputeVerdict(concerns []RiskConcern, criticalActionItems []string, blockOn string) (Verdict, []string) {
-	blockRank, ok := severityRank[blockOn]
-	if !ok {
-		blockRank = severityRank[DefaultBlockOn]
-	}
+func ComputeVerdict(concerns []RiskConcern, criticalActionItems []string, blockOn string) (Verdict, []VerdictReason) {
+	// rankOf maps an unrecognized blockOn to rank 0 - DefaultBlockOn's own
+	// rank - so an invalid policy falls back to the default.
+	blockRank := rankOf(blockOn)
 
-	var blocking, reviewable []string
+	var blocking, reviewable []VerdictReason
 	for _, c := range concerns {
 		switch r := rankOf(c.Severity); {
 		case r <= blockRank:
-			blocking = append(blocking, severityEmoji(c.Severity)+" "+c.Description)
+			blocking = append(blocking, VerdictReason{Severity: c.Severity, Text: c.Description})
 		case r == blockRank+1:
-			reviewable = append(reviewable, severityEmoji(c.Severity)+" "+c.Description)
+			reviewable = append(reviewable, VerdictReason{Severity: c.Severity, Text: c.Description})
 		}
 	}
 
@@ -228,9 +291,9 @@ func ComputeVerdict(concerns []RiskConcern, criticalActionItems []string, blockO
 		return VerdictReview, reviewable
 	}
 	if len(criticalActionItems) > 0 {
-		reasons := make([]string, 0, len(criticalActionItems))
+		reasons := make([]VerdictReason, 0, len(criticalActionItems))
 		for _, item := range criticalActionItems {
-			reasons = append(reasons, "📋 Complete before release: "+item)
+			reasons = append(reasons, VerdictReason{Text: item})
 		}
 		return VerdictReview, reasons
 	}
@@ -248,17 +311,10 @@ func verdictBanner(v Verdict) string {
 	}
 }
 
+// severityEmoji renders a severity marker; an unrecognized severity gets
+// the critical marker, matching rankOf's fail-toward-caution default.
 func severityEmoji(severity string) string {
-	switch severity {
-	case "high":
-		return "⚠️"
-	case "medium":
-		return "🟡"
-	case "low":
-		return "🟢"
-	default: // critical, or unrecognized (treated as critical)
-		return "🔥"
-	}
+	return severityTable[rankOf(severity)].Emoji
 }
 
 // StructuredAnalysis represents the LLM's analysis output in a structured format (v2 schema)
@@ -339,7 +395,7 @@ type TemplateData struct {
 	Comparisons           []*types.Comparison
 	Documentation         []*types.Documentation
 	ReleaseRecommendation string
-	VerdictReasons        []string             // display-ready lines naming what drove the verdict
+	VerdictReasons        []VerdictReason      // what drove the verdict; formatted and escaped by the template
 	AllUserGuidance       []types.UserGuidance // All user guidance for comprehensive reporting
 	TruncationInfo        *TruncationInfo
 }

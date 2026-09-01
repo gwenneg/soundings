@@ -176,8 +176,7 @@ type DocSummary struct {
 	FetchError string `json:"fetch_error,omitempty" jsonschema:"set when documentation was unavailable (auth/network), as opposed to absent"`
 }
 
-// doFetch is the core of the fetch operation, shared by the CLI and the MCP
-// server.
+// doFetch is the core of the fetch operation, behind the MCP fetch tool.
 func doFetch(urls []string, outDir string) (*FetchSummary, error) {
 	for i, u := range urls {
 		urls[i] = stripQueryFragment(u)
@@ -539,15 +538,14 @@ type RenderResult struct {
 	ReportMarkdown string `json:"report_markdown"`
 }
 
-// doRender is the core of the render operation, shared by the CLI and the
-// MCP server. It returns (nil, validationErrors, nil) when the analysis
+// doRender is the core of the render operation, behind the MCP render
+// tool. It returns (nil, validationErrors, nil) when the analysis
 // fails schema validation - the caller relays the field-level errors so the
 // analysis can be corrected and re-run.
 func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []string, error) {
-	switch opts.BlockOn {
-	case "", "critical", "high", "medium":
-	default:
-		return nil, nil, fmt.Errorf("block_on must be one of critical, high, medium; got %q", opts.BlockOn)
+	if !report.IsValidBlockOn(opts.BlockOn) {
+		return nil, nil, fmt.Errorf("block_on must be one of %s; got %q",
+			strings.Join(report.BlockOnSeverities(), ", "), opts.BlockOn)
 	}
 
 	// Strip fences and redact credentials once, before validation:
@@ -769,8 +767,9 @@ func truncationInfo(index *Index) *report.TruncationInfo {
 	return info
 }
 
-// extraGuidanceEntry is the caller-facing shape for --extra-guidance files.
-// All entries are treated as pre-authorized: the caller vouches for them.
+// extraGuidanceEntry is the caller-facing shape of the render tool's
+// extra_guidance entries. All are treated as pre-authorized: the caller
+// vouches for them.
 type extraGuidanceEntry struct {
 	Content    string `json:"content"`
 	Author     string `json:"author"`
@@ -807,8 +806,6 @@ func toUserGuidance(entries []extraGuidanceEntry) ([]types.UserGuidance, error) 
 	return out, nil
 }
 
-var validSeverities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-
 // validateAnalysis checks the agent's structured output against the report
 // schema, returning one message per problem so the agent can fix its output
 // precisely instead of guessing.
@@ -830,8 +827,9 @@ func validateAnalysis(data []byte) []string {
 		errs = append(errs, "summary: required, must be a non-empty one-line summary")
 	}
 	for i, c := range a.RiskSummary.Concerns {
-		if !validSeverities[c.Severity] {
-			errs = append(errs, fmt.Sprintf("risk_summary.concerns[%d].severity: must be one of critical|high|medium|low (lowercase), got %q", i, c.Severity))
+		if !report.IsValidSeverity(c.Severity) {
+			errs = append(errs, fmt.Sprintf("risk_summary.concerns[%d].severity: must be one of %s (lowercase), got %q",
+				i, strings.Join(report.SeverityNames(), "|"), c.Severity))
 		}
 		if strings.TrimSpace(c.Description) == "" {
 			errs = append(errs, fmt.Sprintf("risk_summary.concerns[%d].description: required", i))

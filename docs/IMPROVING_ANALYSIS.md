@@ -1,4 +1,4 @@
-# Improving Your Release Confidence Analysis
+# Improving Your Release Readiness Analysis
 
 This guide explains how to get more accurate verdicts and better analysis from Soundings.
 
