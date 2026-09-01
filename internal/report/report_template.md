@@ -4,24 +4,17 @@
 
 ## 🎯 Summary
 
+{{escapeCell .Analysis.Summary}}
+
 **Recommendation:** {{.ReleaseRecommendation}}
 
 {{- if .VerdictReasons}}
 
-Driven by:
-{{- range .VerdictReasons}}
-{{- if .Severity}}
-- {{severityEmoji .Severity}} {{escapeCell .Text}}
-{{- else}}
-- 📋 Complete before release: {{escapeCell .Text}}
-{{- end}}
-{{- end}}
+{{verdictDrivers .VerdictReasons}}
 {{- else}}
 
 No blocking concerns found.
 {{- end}}
-
-{{escapeCell .Analysis.Summary}}
 
 ---
 

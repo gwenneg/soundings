@@ -171,9 +171,10 @@ concerns the analysis finds, under the `block_on` policy (default
 | Any concern one severity below `block_on`, or an outstanding "complete before release" action item | ⚠️ Manual review required |
 | Neither | ✅ Recommended for release |
 
-Every verdict cites the concerns that drove it, so improving your verdict
-means resolving (or providing evidence that de-escalates) those specific
-concerns.
+Every verdict says what drove it — the severity and count of the driving
+concerns, detailed in the Risk Analysis section — so improving your
+verdict means resolving (or providing evidence that de-escalates) those
+specific concerns.
 
 ### Factors That Reduce Concern Severity
 

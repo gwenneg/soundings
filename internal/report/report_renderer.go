@@ -31,6 +31,7 @@ func templateFuncs() template.FuncMap {
 		"escapePipes":         escapePipes,
 		"escapeCell":          escapeCell,
 		"severityEmoji":       severityEmoji,
+		"verdictDrivers":      verdictDrivers,
 		"authorizationStatus": authorizationStatus,
 		"guidanceStatus":      guidanceStatus,
 		"prLink":              prLink,
@@ -315,6 +316,47 @@ func verdictBanner(v Verdict) string {
 // the critical marker, matching rankOf's fail-toward-caution default.
 func severityEmoji(severity string) string {
 	return severityTable[rankOf(severity)].Emoji
+}
+
+// verdictDrivers phrases what drove a non-release verdict as one line
+// pointing at the report section that carries the details, rather than
+// duplicating the descriptions in the Summary. Concern reasons are
+// grouped by severity ("2 critical and 1 high concerns"); action-item
+// reasons (empty Severity) point at Action Items. Under the max-severity
+// verdict rule, severity plus count identifies exactly which entries
+// drove the verdict - and only fixed wording and counts appear here,
+// never analysis-authored text.
+func verdictDrivers(reasons []VerdictReason) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+	if reasons[0].Severity == "" {
+		noun := "action items"
+		if len(reasons) == 1 {
+			noun = "action item"
+		}
+		return fmt.Sprintf("Driven by %d outstanding critical %s to complete before release — listed under Action Items below.", len(reasons), noun)
+	}
+	counts := make(map[string]int)
+	for _, r := range reasons {
+		name := r.Severity
+		if !IsValidSeverity(name) {
+			// Unrecognized counts as critical, matching rankOf.
+			name = severityTable[0].Name
+		}
+		counts[name]++
+	}
+	var parts []string
+	for _, s := range severityTable {
+		if n := counts[s.Name]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, s.Name))
+		}
+	}
+	noun := "concerns"
+	if len(reasons) == 1 {
+		noun = "concern"
+	}
+	return fmt.Sprintf("Driven by %s %s — detailed in Risk Analysis below.", strings.Join(parts, " and "), noun)
 }
 
 // StructuredAnalysis represents the LLM's analysis output in a structured format (v2 schema)

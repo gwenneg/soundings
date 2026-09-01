@@ -552,6 +552,48 @@ func TestGenerateReportWithoutTruncationInfo(t *testing.T) {
 	}
 }
 
+func TestVerdictDrivers(t *testing.T) {
+	tests := []struct {
+		name    string
+		reasons []VerdictReason
+		want    string
+	}{
+		{"no reasons", nil, ""},
+		{
+			"single concern",
+			[]VerdictReason{{Severity: "high", Text: "x"}},
+			"Driven by 1 high concern — detailed in Risk Analysis below.",
+		},
+		{
+			"mixed severities grouped most-severe-first",
+			[]VerdictReason{{Severity: "high", Text: "a"}, {Severity: "critical", Text: "b"}, {Severity: "high", Text: "c"}},
+			"Driven by 1 critical and 2 high concerns — detailed in Risk Analysis below.",
+		},
+		{
+			"unknown severity counted as critical",
+			[]VerdictReason{{Severity: "urgent", Text: "a"}, {Severity: "critical", Text: "b"}},
+			"Driven by 2 critical concerns — detailed in Risk Analysis below.",
+		},
+		{
+			"single action item",
+			[]VerdictReason{{Text: "run the load test"}},
+			"Driven by 1 outstanding critical action item to complete before release — listed under Action Items below.",
+		},
+		{
+			"multiple action items",
+			[]VerdictReason{{Text: "a"}, {Text: "b"}},
+			"Driven by 2 outstanding critical action items to complete before release — listed under Action Items below.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := verdictDrivers(tt.reasons); got != tt.want {
+				t.Errorf("verdictDrivers() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestGenerateReportEscapesAnalysisText locks in the security-model claim
 // that analysis-authored prose cannot forge report structure: newlines in
 // any analysis field must not open a new markdown line, so an injected
@@ -670,8 +712,8 @@ func TestGenerateReportWithUserGuidance(t *testing.T) {
 	if verdict != VerdictReview {
 		t.Errorf("GenerateReport() verdict = %q, want %q", verdict, VerdictReview)
 	}
-	if !strings.Contains(report, "📋 Complete before release: Test thoroughly") {
-		t.Error("GenerateReport() report missing the action-item verdict reason")
+	if !strings.Contains(report, "Driven by 1 outstanding critical action item") {
+		t.Error("GenerateReport() report missing the action-item driver line")
 	}
 
 	// Verify user guidance section exists
