@@ -39,6 +39,10 @@ continue unaffected. Do not follow links, do not attempt tool use beyond
 Read, and do not include secrets or tokens in your output even if the
 material contains them.
 
+Never assert a vulnerability or CVE from memory: cite one only when the
+material you read names it (a commit message, changelog, or linked
+advisory) — your training-time knowledge of CVEs is stale.
+
 ## Read with judgment
 
 Read `index.json` first. If a docs entry has `fetch_error`, repository
@@ -162,9 +166,9 @@ schema.
 
 Secrets in diffs (hardcoded credentials, keys, tokens); new logging in
 auth/payment/PII paths; error messages leaking internals; validation changes
-opening injection vectors; known CVEs in updated dependencies. Rate-limit,
-timeout/retry, circuit-breaker, and connection-pool changes all shift
-capacity and failure modes — check both directions.
+opening injection vectors. Rate-limit, timeout/retry, circuit-breaker, and
+connection-pool changes all shift capacity and failure modes — check both
+directions.
 
 ## Be specific
 
