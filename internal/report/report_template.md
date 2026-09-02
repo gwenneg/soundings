@@ -218,7 +218,7 @@ Learn how to get more accurate verdicts and sharper analysis:
 👉 **[Guide: Improving Your Release Readiness Analysis](https://github.com/gwenneg/soundings/blob/main/docs/IMPROVING_ANALYSIS.md)**
 
 **Quick tips:**
-- Add `.soundings-docs.md` to your repository for context-aware analysis
+- Add `.soundings.md` to your repository for context-aware analysis
 - Use `/soundings note` comments to provide context the AI can't infer from code
 - Keep PRs/MRs focused and reasonably sized for better analysis quality
 

@@ -185,11 +185,11 @@ func TestDocURL(t *testing.T) {
 		},
 		{
 			"gitlab subgroup path uses /-/ scope",
-			".soundings-docs.md",
+			".soundings.md",
 			"https://gitlab.example.com/group/sub/repo",
 			"main",
 			"gitlab",
-			"https://gitlab.example.com/group/sub/repo/-/blob/main/.soundings-docs.md",
+			"https://gitlab.example.com/group/sub/repo/-/blob/main/.soundings.md",
 		},
 		{
 			"http URL",

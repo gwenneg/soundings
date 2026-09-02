@@ -37,7 +37,7 @@ anyway to fetch the diff.
 - **Specific, not generic.** Reports cite the actual file, function, and
   line at issue and turn concerns into action items sorted by urgency —
   not a rubber-stamped "looks fine."
-- **Gets better with your input.** A `.soundings-docs.md` file teaches it
+- **Gets better with your input.** A `.soundings.md` file teaches it
   your service's criticality and known risk areas; a `/soundings note`
   comment on the PR/MR hands it context it can't infer from a diff alone.
   See the [analysis guide](docs/IMPROVING_ANALYSIS.md).

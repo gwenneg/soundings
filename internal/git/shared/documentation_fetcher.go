@@ -14,7 +14,7 @@ import (
 
 const (
 	// Documentation file constants
-	mainDocFilename      = ".soundings-docs.md"
+	mainDocFilename      = ".soundings.md"
 	additionalDocsHeader = "Additional Documentation"
 )
 
