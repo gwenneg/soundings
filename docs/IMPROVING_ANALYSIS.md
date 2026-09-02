@@ -8,7 +8,7 @@ This guide explains how to get more accurate verdicts and better analysis from S
 
 **Impact: High** | **Effort: Medium** | **One-time setup**
 
-Create a `.soundings-docs.md` file in your repository root. This gives the AI context about your service, its criticality, dependencies, and known risk areas.
+Create a `.soundings.md` file in your repository root. This gives the AI context about your service, its criticality, dependencies, and known risk areas.
 
 ```markdown
 # Release Documentation
@@ -37,7 +37,7 @@ Create a `.soundings-docs.md` file in your repository root. This gives the AI co
 - Analysis considers your specific risk areas
 - Recommendations are tailored to your architecture
 
-See [`.soundings-docs.example.md`](../.soundings-docs.example.md) for a comprehensive template.
+See [`.soundings.example.md`](../.soundings.example.md) for a comprehensive template.
 
 ---
 
@@ -138,7 +138,7 @@ everything is read in full, and the report says what was read versus skimmed.
 
 **Impact: Low-Medium** | **Effort: Low**
 
-In your `.soundings-docs.md`, add links in the "Additional Documentation" section:
+In your `.soundings.md`, add links in the "Additional Documentation" section:
 
 ```markdown
 ## Additional Documentation
@@ -238,7 +238,7 @@ The tool classifies files by risk tier to prioritize how deeply each is read:
 
 ### "The AI doesn't understand my service"
 
-**Solution:** Create or improve `.soundings-docs.md`
+**Solution:** Create or improve `.soundings.md`
 
 Include:
 - Service criticality and SLA
@@ -277,7 +277,7 @@ Include:
 
 ### Before Submitting
 
-- [ ] Repository has `.soundings-docs.md`
+- [ ] Repository has `.soundings.md`
 - [ ] Added `/soundings note` guidance with relevant context
 - [ ] Commit messages explain "why" not just "what"
 - [ ] PR/MR is focused on a single concern
@@ -309,7 +309,7 @@ orchestrating skills may pass their own value.
 ### The Analysis Seems Wrong
 
 1. **Add context via `/soundings note`** - The AI works with available information
-2. **Update documentation** - Ensure `.soundings-docs.md` reflects reality
+2. **Update documentation** - Ensure `.soundings.md` reflects reality
 3. **Check read depth** - The report notes what was read in full versus skimmed; very large diffs mean lighter reading of low-risk files
 4. **Review action items** - Sometimes the AI catches real issues
 
