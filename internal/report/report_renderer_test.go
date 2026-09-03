@@ -54,6 +54,17 @@ func TestStripMarkdownCodeBlocks(t *testing.T) {
 	}
 }
 
+func TestSummarySection(t *testing.T) {
+	report := "**banner**\n\n# Title\n\n## Summary\n\ntext\n\n**Recommendation:** ok\n\n---\n\n## Risk Analysis\n\n---\n\nmore\n"
+	want := "**banner**\n\n# Title\n\n## Summary\n\ntext\n\n**Recommendation:** ok\n"
+	if got := SummarySection(report); got != want {
+		t.Errorf("SummarySection = %q, want %q", got, want)
+	}
+	if got := SummarySection("no rule here\n"); got != "no rule here\n" {
+		t.Errorf("a report without a rule should be returned whole, got %q", got)
+	}
+}
+
 // Test template helper functions
 
 func TestEscapePipes(t *testing.T) {

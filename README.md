@@ -86,7 +86,12 @@ Driven by 1 high concern — detailed in Risk Analysis below.
 Full reports go further: a technical-details appendix listing what was
 read in full versus skimmed, a changelog table per repository, and a
 documentation-quality assessment — all in one Markdown file you can post
-back to the PR/MR or keep locally.
+back to the PR/MR or keep locally. The session shows only the report's
+opening section (summary, recommendation, and what drove it) followed by
+the file's path; the full report is the file. Where it goes is settled
+before the analysis starts: interactively, the skill asks; a headless
+(`claude -p`) run must pass `report_path` in the invocation, and stops
+with a usage error otherwise.
 
 ## Install
 
@@ -223,12 +228,13 @@ run with the plugin's hooks disabled, the equivalent settings rules are
 `mcp__plugin_soundings_helper__render` in `permissions.allow`.
 
 File writes never prompt either, because no agent performs them: the
-helper itself persists the analysis JSON for the validation retry loop
-(a successful render deletes the data directory, so the report lives on
-as `report_markdown` in the tool result), and writes the caller-chosen `report_path` copy (absolute
-`.md` path only; an existing file is only overwritten when it is a
-previously generated Soundings report, so the auto-approved tool cannot be
-steered into clobbering arbitrary files). The analyze skill turn disallows
+helper itself persists the analysis JSON for the validation retry loop,
+and writes the report to the required `report_path` (absolute `.md` path
+only; an existing file is only overwritten when it is a previously
+generated Soundings report, so the auto-approved tool cannot be steered
+into clobbering arbitrary files). A successful render deletes the data
+directory, so that file is how the report outlives the run — the render
+tool refuses to run without one. The analyze skill turn disallows
 the Write tool outright — every file this pipeline produces is written by
 the helper. A normal run is fully prompt-free.
 

@@ -57,6 +57,18 @@ func TestDoRenderDeletesDataDirOnSuccess(t *testing.T) {
 	if !strings.HasPrefix(result.ReportMarkdown, reportBanner) {
 		t.Error("report_markdown does not start with the report banner")
 	}
+	if result.ReportPath != reportPath {
+		t.Errorf("report_path = %q, want %q", result.ReportPath, reportPath)
+	}
+	if !strings.HasPrefix(result.SummaryMarkdown, reportBanner) || !strings.Contains(result.SummaryMarkdown, "**Recommendation:**") {
+		t.Errorf("summary_markdown should be the report's opening section, got %q", result.SummaryMarkdown)
+	}
+	if strings.Contains(result.SummaryMarkdown, "## 🔍 Risk Analysis") {
+		t.Error("summary_markdown must stop before the Risk Analysis section")
+	}
+	if !strings.HasPrefix(result.ReportMarkdown, result.SummaryMarkdown) {
+		t.Error("summary_markdown must be a verbatim prefix of report_markdown")
+	}
 
 	// The run's products outlive it; the fetch data does not.
 	if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
@@ -79,7 +91,7 @@ func TestDoRenderPersistsAnalysisOnValidationFailure(t *testing.T) {
 	dataDir := renderFixture(t)
 
 	// Fields outside the schema are rejected as unknown.
-	_, validationErrs, err := doRender(`{"unrecognized_field": true}`, dataDir, renderOpts{})
+	_, validationErrs, err := doRender(`{"unrecognized_field": true}`, dataDir, renderOpts{ReportPath: filepath.Join(t.TempDir(), "report.md")})
 	if err != nil {
 		t.Fatalf("doRender: %v", err)
 	}
@@ -114,7 +126,7 @@ func TestDoRenderRejectsUnregisteredDataDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err := doRender(validAnalysisJSON, dataDir, renderOpts{})
+	_, _, err := doRender(validAnalysisJSON, dataDir, renderOpts{ReportPath: filepath.Join(t.TempDir(), "report.md")})
 	if err == nil || !strings.Contains(err.Error(), "not a live fetch data directory") {
 		t.Fatalf("expected a not-registered error, got %v", err)
 	}
@@ -155,7 +167,8 @@ func TestDoRenderComputesVerdictFromConcerns(t *testing.T) {
 		"documentation_recommendations": "none"
 	}`
 
-	result, validationErrs, err := doRender(analysis, renderFixture(t), renderOpts{})
+	reportPath := filepath.Join(t.TempDir(), "report.md")
+	result, validationErrs, err := doRender(analysis, renderFixture(t), renderOpts{ReportPath: reportPath})
 	if err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender: err=%v validationErrs=%v", err, validationErrs)
 	}
@@ -168,7 +181,7 @@ func TestDoRenderComputesVerdictFromConcerns(t *testing.T) {
 
 	// The same concern blocks outright under a stricter policy. (A fresh
 	// fixture: a successful render deletes its data directory.)
-	result, validationErrs, err = doRender(analysis, renderFixture(t), renderOpts{BlockOn: "high"})
+	result, validationErrs, err = doRender(analysis, renderFixture(t), renderOpts{BlockOn: "high", ReportPath: reportPath})
 	if err != nil || len(validationErrs) > 0 {
 		t.Fatalf("doRender (block_on=high): err=%v validationErrs=%v", err, validationErrs)
 	}
@@ -181,8 +194,32 @@ func TestDoRenderRejectsInvalidBlockOn(t *testing.T) {
 	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
 	dataDir := renderFixture(t)
 
-	if _, _, err := doRender(validAnalysisJSON, dataDir, renderOpts{BlockOn: "sometimes"}); err == nil {
+	if _, _, err := doRender(validAnalysisJSON, dataDir, renderOpts{BlockOn: "sometimes", ReportPath: filepath.Join(t.TempDir(), "report.md")}); err == nil {
 		t.Error("expected an error for an invalid block_on value")
+	}
+}
+
+func TestDoRenderRequiresReportPath(t *testing.T) {
+	t.Setenv("SOUNDINGS_CACHE_DIR", t.TempDir())
+	dataDir := renderFixture(t)
+
+	for _, tc := range []struct{ name, path string }{
+		{"missing", ""},
+		{"relative", "soundings-report.md"},
+		{"not markdown", filepath.Join(t.TempDir(), "report.txt")},
+	} {
+		_, _, err := doRender(validAnalysisJSON, dataDir, renderOpts{ReportPath: tc.path})
+		if err == nil || !strings.Contains(err.Error(), "report_path") {
+			t.Errorf("%s: expected a report_path error, got %v", tc.name, err)
+		}
+	}
+	// The usage mistake is caught before any work: the analysis is not
+	// persisted and the data directory is neither touched nor released.
+	if _, err := os.Stat(filepath.Join(dataDir, "analysis.json")); !os.IsNotExist(err) {
+		t.Error("analysis.json must not be written when report_path is rejected")
+	}
+	if _, ok := lookupRegistered(dataDir); !ok {
+		t.Error("the data dir must stay registered after a rejected report_path")
 	}
 }
 
