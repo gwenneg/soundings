@@ -48,9 +48,7 @@ cannot produce a file fails in seconds rather than after a full analysis.
 
 - If the caller passed a `report_path`, use it as is — do not ask.
 - Otherwise, ask the user where to save the report with the
-  AskUserQuestion tool. Offer exactly these two options, in this order
-  (the tool requires at least two, and adds its own "Other" free-text
-  entry for any other path — do not add a third option yourself):
+  AskUserQuestion tool, offering these two options:
   1. `<working directory>/soundings-report.md` (Recommended) — one file,
      reused: a previous soundings report there is overwritten.
   2. `<working directory>/soundings-report-<head>.md` — one file per
@@ -58,7 +56,7 @@ cannot produce a file fails in seconds rather than after a full analysis.
      part after `...`), with any `/` replaced by `-` and a full SHA cut
      to its first 12 characters.
   Both hold a single report even for several compare URLs. Use the
-  chosen path, or the path typed under "Other", as given.
+  answer as given.
 - If the question cannot be asked — the tool is denied, unavailable,
   errors, or returns no answer, which is what non-interactive
   (`claude -p`) runs do — stop and say that headless runs must pass
