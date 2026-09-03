@@ -194,17 +194,17 @@ executable command or verifiable check with success criteria.
 ## Output
 
 Respond with EXACTLY this JSON structure and nothing else (severities
-lowercase: `critical`, `high`, `medium`, `low`). No markdown: no `#`
-headings, no bullet-list markers, no bold/italic asterisks outside of
-string values — those belong to the rendered report, not to this JSON.
-The `model` field is REQUIRED — state your own exact model identifier;
-the render step rejects an analysis without it and returns it to you for
-correction, and the report footer credits the model that performed the
-analysis. Objects in `concerns` and `positives` have EXACTLY the fields
-shown below — no extra fields such
-as a separate `file` key; the schema rejects unknown fields. Put file/line
-references inline in the `description` text instead, as `technical_details`
-entries already do:
+lowercase: `critical`, `high`, `medium`, `low`). Not a markdown rendering
+of it: no `#` headings, no bullet lists, no bold text — inline code in
+string values is fine, but anything else that looks like a report means
+you have written the wrong thing. The `model` field is REQUIRED — state
+your own exact model identifier; the render step rejects an analysis
+without it and returns it to you for correction, and the report footer
+credits the model that performed the analysis. Objects in `concerns` and
+`positives` have EXACTLY the fields shown below — no extra fields such as
+a separate `file` key; the schema rejects unknown fields. Put file/line
+references inline in the `description` text instead, as
+`technical_details` entries already do:
 
 ```json
 {
