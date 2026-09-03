@@ -45,9 +45,6 @@ import (
 	"github.com/gwenneg/soundings/internal/risk"
 )
 
-// pluginVersion mirrors .claude-plugin/plugin.json; bump both together.
-const pluginVersion = "0.7.0"
-
 func main() {
 	initLogging()
 
@@ -61,7 +58,7 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 {
-		fmt.Fprintf(os.Stderr, "soundings %s is an MCP server; run it with no arguments (stdio transport), or with 'hook' as the PreToolUse confinement hook\n", pluginVersion)
+		fmt.Fprintln(os.Stderr, "soundings is an MCP server; run it with no arguments (stdio transport), or with 'hook' as the PreToolUse confinement hook")
 		os.Exit(2)
 	}
 	err := runMCP()
