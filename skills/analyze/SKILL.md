@@ -35,8 +35,29 @@ pass: a `block_on` severity policy (`critical` (default), `high`, or
 concerns one level below produce a manual-review verdict), pre-authorized
 guidance entries (a JSON array of objects with `content`, `author`,
 `date`, and `comment_url` fields, passed to the renderer via
-`extra_guidance`), and caller notes for the assessment. If no compare
-URL was provided, ask for one — do not guess.
+`extra_guidance`), a `report_path` for the full report, and caller notes
+for the assessment. If no compare URL was provided, ask for one — do not
+guess.
+
+## Step 0 — settle where the report goes
+
+The full report is written to a file and only its opening section is
+shown in the session, so every run needs a `report_path`: an ABSOLUTE
+path ending in `.md`. Settle it before fetching anything, so a run that
+cannot produce a file fails in seconds rather than after a full analysis.
+
+- If the caller passed a `report_path`, use it as is — do not ask.
+- Otherwise, ask the user where to save the report with the
+  AskUserQuestion tool, offering `<working directory>/soundings-report.md`
+  as the recommended option (one file even for several compare URLs);
+  the user may enter another path. Use the answer as given.
+- If the question cannot be asked — the tool is denied, unavailable, or
+  returns no answer, which is what non-interactive (`claude -p`) runs
+  do — stop and say that headless runs must pass `report_path` in the
+  invocation. Do not invent a path and do not run the analysis without
+  one: the render tool refuses to render without a file to write, and
+  the fetched data is deleted after a successful render, so a report
+  that is not written to a file does not outlive the run.
 
 ## Step 1 — fetch release data
 
@@ -87,19 +108,17 @@ Call the `render` tool from this plugin's helper MCP server
 (`mcp__plugin_soundings_helper__render`):
 
     render({ "analysis_json": <the JSON exactly as risk-analyst returned it>,
-             "data_dir": <the fetch output directory> })
+             "data_dir": <the fetch output directory>,
+             "report_path": <the path settled in Step 0> })
 
 Include `block_on` or `extra_guidance` only when the caller provided
 them.
 
-If the caller or user wants the report saved as a file, pass `report_path`
-with an ABSOLUTE path ending in `.md` (e.g.
-`<working directory>/soundings-report.md`) — do not write the report
-yourself. The helper writes it, refusing to overwrite a file that is not
-a previously generated soundings report. A successful render deletes the
+`report_path` is required. The helper writes the report there itself —
+do not write it yourself — refusing to overwrite a file that is not a
+previously generated soundings report. A successful render deletes the
 fetch output directory (the untrusted data's life ends with the run), so
-`report_path` and the result's `report_markdown` are how a report
-outlives it — pass `report_path` whenever a saved file is wanted.
+the file at `report_path` is how a report outlives it.
 
 The report footer credits the model named inside the analysis JSON — the
 risk-analyst agent states its own identity there, and validation rejects
@@ -122,11 +141,14 @@ with exactly this prompt (do not repair the analysis yourself):
 
 The renderer computes the release verdict from the concern severities and
 the `block_on` policy; never state a recommendation that contradicts it.
-Show the rendered markdown report (`report_markdown` in the tool result)
-to the user as the final result: reproduce it verbatim, character for
-character — copy the string exactly as returned, nothing altered or left
-out. Emit it as the plain body of your reply so the terminal renders it
-as markdown: never wrap it in a code fence, blockquote, or any other
-container, and do not indent it. A brief note may follow it (e.g.
-offering to save it to a file), but nothing may precede it or be
-interleaved with it.
+The final result shown to the user is the report's opening section
+(`summary_markdown` in the tool result — the summary, the recommendation,
+and what drove it): reproduce it verbatim, character for character — copy
+the string exactly as returned, nothing altered or left out — as the
+plain body of your reply so the terminal renders it as markdown: never
+wrap it in a code fence, blockquote, or any other container, and do not
+indent it. Follow it with a single line giving the path of the full
+report (`report_path` in the tool result). Do not print
+`report_markdown`, and do not summarize, restate, or excerpt the rest of
+the report — the file is the report. Nothing may precede the summary or
+be interleaved with it.

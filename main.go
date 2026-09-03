@@ -24,6 +24,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -519,17 +520,20 @@ type renderOpts struct {
 	BlockOn       string
 	ExtraGuidance []extraGuidanceEntry
 
-	// ReportPath, when set, is a caller-chosen location the rendered
-	// markdown is written to (see writeReportCopy for the constraints) -
-	// the data directory is deleted after a successful render, so this and
-	// the result's report_markdown are how a report outlives the run.
+	// ReportPath is the caller-chosen location the rendered markdown is
+	// written to (see writeReportCopy for the constraints). It is required:
+	// the data directory is deleted after a successful render, so this file
+	// is how the report outlives the run - a render must never succeed with
+	// the only copy of the report inside a tool result.
 	ReportPath string
 }
 
 // RenderResult is the successful outcome of a render.
 type RenderResult struct {
-	Verdict        string `json:"verdict" jsonschema:"the computed release verdict: release, review, or not_recommended"`
-	ReportMarkdown string `json:"report_markdown"`
+	Verdict         string `json:"verdict" jsonschema:"the computed release verdict: release, review, or not_recommended"`
+	ReportPath      string `json:"report_path" jsonschema:"the file the full report was written to"`
+	SummaryMarkdown string `json:"summary_markdown" jsonschema:"the report's opening section (banner, summary, recommendation, and what drove it), cut verbatim from the rendered report; what to show as the result"`
+	ReportMarkdown  string `json:"report_markdown" jsonschema:"the full rendered report, identical to the file at report_path"`
 }
 
 // doRender is the core of the render operation, behind the MCP render
@@ -540,6 +544,12 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 	if !report.IsValidBlockOn(opts.BlockOn) {
 		return nil, nil, fmt.Errorf("block_on must be one of %s; got %q",
 			strings.Join(report.BlockOnSeverities(), ", "), opts.BlockOn)
+	}
+	// Reject a missing or malformed report path before any work - the
+	// report file is the run's only durable output, so there is nothing to
+	// do without one, and a caller that forgot it should hear so at once.
+	if err := checkReportPath(opts.ReportPath); err != nil {
+		return nil, nil, err
 	}
 	// Everything below assumes helper custody of data_dir - it is written
 	// into without a prompt and deleted on success - so refuse any
@@ -616,24 +626,45 @@ func doRender(analysisRaw, dataDir string, opts renderOpts) (*RenderResult, []st
 		return nil, nil, err
 	}
 
-	// The copy must land outside every live fetch directory - they get
+	// The file must land outside every live fetch directory - they get
 	// deleted, and the tool must not report success on a vanished file.
-	if opts.ReportPath != "" {
-		if insideAny(resolvePath(opts.ReportPath, string(filepath.Separator)), fencedDirs(), true) {
-			return nil, nil, fmt.Errorf("report_path %q is inside a live fetch data directory, which is deleted when its run ends; choose a path outside it", opts.ReportPath)
-		}
-		if err := writeReportCopy(opts.ReportPath, out); err != nil {
-			return nil, nil, err
-		}
+	if insideAny(resolvePath(opts.ReportPath, string(filepath.Separator)), fencedDirs(), true) {
+		return nil, nil, fmt.Errorf("report_path %q is inside a live fetch data directory, which is deleted when its run ends; choose a path outside it", opts.ReportPath)
+	}
+	if err := writeReportCopy(opts.ReportPath, out); err != nil {
+		return nil, nil, err
 	}
 
 	// Only on success - a validation failure means the retry loop still
 	// needs to re-read the directory.
 	releaseDir(canonDataDir)
 
-	slog.Info("Render complete", "verdict", verdict)
+	slog.Info("Render complete", "verdict", verdict, "report_path", opts.ReportPath)
 
-	return &RenderResult{Verdict: string(verdict), ReportMarkdown: out}, nil, nil
+	return &RenderResult{
+		Verdict:         string(verdict),
+		ReportPath:      opts.ReportPath,
+		SummaryMarkdown: report.SummarySection(out),
+		ReportMarkdown:  out,
+	}, nil, nil
+}
+
+// checkReportPath is the shape check on a report_path: present, absolute
+// (the helper does not run in the session's working directory, so a
+// relative path would land in the plugin root), and ending in .md. It runs
+// before any work so a usage mistake fails fast, and again in
+// writeReportCopy, which is also called on its own.
+func checkReportPath(path string) error {
+	if path == "" {
+		return errors.New("report_path is required: pass an absolute path ending in .md for the rendered report; the fetch data is deleted after a successful render, so this file is the report's only durable copy")
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("report_path must be an absolute path, got %q", path)
+	}
+	if filepath.Ext(path) != ".md" {
+		return fmt.Errorf("report_path must end in .md, got %q", path)
+	}
+	return nil
 }
 
 // reportBanner is the first line of every rendered report (from
@@ -643,17 +674,12 @@ const reportBanner = "**⚠️ AI-Generated Report**"
 
 // writeReportCopy writes the rendered markdown to the caller-chosen path.
 // The path is caller-controlled input to an auto-approved tool, so it is
-// constrained: it must be absolute (the helper does not run in the
-// session's working directory, so a relative path would land in the plugin
-// root), must end in .md, and an existing file is only overwritten when it
-// is a previously generated soundings report - the tool cannot be steered
-// into clobbering an arbitrary file.
+// constrained: it must pass checkReportPath, and an existing file is only
+// overwritten when it is a previously generated soundings report - the
+// tool cannot be steered into clobbering an arbitrary file.
 func writeReportCopy(path, content string) error {
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("report_path must be an absolute path, got %q", path)
-	}
-	if filepath.Ext(path) != ".md" {
-		return fmt.Errorf("report_path must end in .md, got %q", path)
+	if err := checkReportPath(path); err != nil {
+		return err
 	}
 	existing, err := os.ReadFile(path)
 	switch {

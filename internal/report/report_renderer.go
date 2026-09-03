@@ -128,6 +128,20 @@ func docFileInfo(filename, repoURL, branch, platform, content string) string {
 	return fmt.Sprintf("- %s - %d chars", url, len(content))
 }
 
+// SummarySection returns the opening section of a rendered report: the
+// advisory banner, title, summary, recommendation, and verdict drivers -
+// everything above the first horizontal rule. It is cut from the rendered
+// markdown itself, so what a caller shows as "the verdict" is the report's
+// own text, never a restatement of it. A report without a rule (which the
+// template never produces) is returned whole.
+func SummarySection(report string) string {
+	const rule = "\n---\n"
+	if i := strings.Index(report, rule); i >= 0 {
+		return strings.TrimRight(report[:i], "\n") + "\n"
+	}
+	return report
+}
+
 // StripMarkdownCodeBlocks extracts the JSON payload from analysis output.
 // Exported so validation and rendering strip identically.
 //
