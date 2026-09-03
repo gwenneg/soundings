@@ -117,7 +117,8 @@ with exactly this prompt (do not repair the analysis yourself):
 
     Read your previous analysis, verify it still matches your judgment of
     the material (spot-check what the errors touch), correct it, and
-    respond with ONLY the corrected JSON object — no other text.
+    respond with ONLY the corrected JSON object — no other text, and not
+    a markdown report.
 
 The renderer computes the release verdict from the concern severities and
 the `block_on` policy; never state a recommendation that contradicts it.
