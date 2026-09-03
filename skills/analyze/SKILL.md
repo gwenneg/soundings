@@ -48,16 +48,21 @@ cannot produce a file fails in seconds rather than after a full analysis.
 
 - If the caller passed a `report_path`, use it as is — do not ask.
 - Otherwise, ask the user where to save the report with the
-  AskUserQuestion tool, offering `<working directory>/soundings-report.md`
-  as the recommended option (one file even for several compare URLs);
-  the user may enter another path. Use the answer as given.
-- If the question cannot be asked — the tool is denied, unavailable, or
-  returns no answer, which is what non-interactive (`claude -p`) runs
-  do — stop and say that headless runs must pass `report_path` in the
-  invocation. Do not invent a path and do not run the analysis without
-  one: the render tool refuses to render without a file to write, and
-  the fetched data is deleted after a successful render, so a report
-  that is not written to a file does not outlive the run.
+  AskUserQuestion tool, offering these two options:
+  1. `<working directory>/soundings-report.md` (Recommended) — one file,
+     reused: a previous soundings report there is overwritten.
+  2. `<working directory>/soundings-report-<YYYY-MM-DD>.md` — one file
+     per day, kept, dated today.
+  Both hold a single report even for several compare URLs. Use the
+  answer as given.
+- If the question cannot be asked — the tool is denied, unavailable,
+  errors, or returns no answer, which is what non-interactive
+  (`claude -p`) runs do — stop and say that headless runs must pass
+  `report_path` in the invocation. A tool error is not an answer. Do not
+  invent a path and do not run the analysis without one: the render
+  tool refuses to render without a file to write, and the fetched data
+  is deleted after a successful render, so a report that is not written
+  to a file does not outlive the run.
 
 ## Step 2 — fetch release data
 
