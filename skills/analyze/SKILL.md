@@ -125,5 +125,8 @@ the `block_on` policy; never state a recommendation that contradicts it.
 Show the rendered markdown report (`report_markdown` in the tool result)
 to the user as the final result: reproduce it verbatim, character for
 character — copy the string exactly as returned, nothing altered or left
-out. A brief note may follow it (e.g. offering to save it to a file),
-but nothing may precede it or be interleaved with it.
+out. Emit it as the plain body of your reply so the terminal renders it
+as markdown: never wrap it in a code fence, blockquote, or any other
+container, and do not indent it. A brief note may follow it (e.g.
+offering to save it to a file), but nothing may precede it or be
+interleaved with it.
