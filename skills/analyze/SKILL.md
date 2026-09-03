@@ -122,4 +122,7 @@ with exactly this prompt (do not repair the analysis yourself):
 The renderer computes the release verdict from the concern severities and
 the `block_on` policy; never state a recommendation that contradicts it.
 Show the rendered markdown report (`report_markdown` in the tool result)
-to the user as the final result.
+to the user as the final result: reproduce it verbatim, character for
+character — copy the string exactly as returned, nothing altered or left
+out. A brief note may follow it (e.g. offering to save it to a file),
+but nothing may precede it or be interleaved with it.

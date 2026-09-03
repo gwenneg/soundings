@@ -41,8 +41,6 @@ only the middle section is omitted.
 ---
 {{- end}}
 
-
-
 ## 🔍 Risk Analysis
 
 {{- if .Analysis.RiskSummary.Concerns}}
