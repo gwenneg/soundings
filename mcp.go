@@ -25,9 +25,8 @@ func runMCP() error {
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "soundings",
-		Title:   "Soundings release readiness helper",
-		Version: pluginVersion,
+		Name:  "soundings",
+		Title: "Soundings release readiness helper",
 	}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
