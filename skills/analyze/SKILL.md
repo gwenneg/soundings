@@ -51,10 +51,8 @@ cannot produce a file fails in seconds rather than after a full analysis.
   AskUserQuestion tool, offering these two options:
   1. `<working directory>/soundings-report.md` (Recommended) — one file,
      reused: a previous soundings report there is overwritten.
-  2. `<working directory>/soundings-report-<head>.md` — one file per
-     release, kept: `<head>` is the head of the first compare URL (the
-     part after `...`), with any `/` replaced by `-` and a full SHA cut
-     to its first 12 characters.
+  2. `<working directory>/soundings-report-<YYYY-MM-DD>.md` — one file
+     per day, kept, dated today.
   Both hold a single report even for several compare URLs. Use the
   answer as given.
 - If the question cannot be asked — the tool is denied, unavailable,
