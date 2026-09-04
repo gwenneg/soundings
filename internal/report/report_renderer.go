@@ -71,12 +71,16 @@ func authorizationStatus(isAuthorized bool) string {
 // entries (extra_guidance, caller-supplied) are neither sourced from nor
 // verified against a fetched PR/MR - IsAuthorized is asserted by the
 // caller, not checked - so they get their own label rather than reusing
-// "Authorized", which would otherwise misleadingly imply the same
-// verification (and, per the report's own caption, that they were used in
-// the analysis - they aren't).
+// "Authorized", which would misleadingly imply the same verification.
+// Entries the caller marked authorized reach the analysis (the analyze
+// skill relays them to the risk-analyst as guidance); the rest are listed
+// only, and the labels say which is which.
 func guidanceStatus(g types.UserGuidance) string {
 	if g.IsExternal {
-		return "🌐 External (not analyzed)"
+		if g.IsAuthorized {
+			return "🌐 External (used in analysis)"
+		}
+		return "🌐 External (listed only)"
 	}
 	return authorizationStatus(g.IsAuthorized)
 }

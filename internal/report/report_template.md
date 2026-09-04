@@ -106,7 +106,7 @@ The following user guidance was provided in GitLab MR and GitHub PR discussions:
 | {{escapeCell .Content}} | {{formatAuthor .Author .CommentURL}} | {{formatDate .Date}} | {{guidanceStatus .}} | [View]({{.CommentURL}}) |
 {{- end}}
 
-**Note:** Only authorized `/soundings note` guidance is used in the analysis. For GitHub PRs, that means the PR author or an approving reviewer with repository authority. For GitLab MRs, the MR author or anyone in the approver list. Unauthorized guidance is listed here for transparency but is ignored during the analysis. External guidance is supplied directly by the caller rather than sourced from a fetched PR/MR - it is neither verified nor used in the analysis, and is listed here for transparency only.
+**Note:** Only authorized `/soundings note` guidance is used in the analysis. For GitHub PRs, that means the PR author or an approving reviewer with repository authority. For GitLab MRs, the MR author or anyone in the approver list. Unauthorized guidance is listed here for transparency but is ignored during the analysis. External guidance is supplied directly by the caller rather than sourced from a fetched PR/MR, and Soundings does not verify who wrote it: entries the caller marked authorized are used in the analysis like authorized guidance, the rest are listed here only.
 {{- end}}
 
 ---

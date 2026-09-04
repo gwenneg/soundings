@@ -48,18 +48,24 @@ func TestAuthorizedIndexGuidanceEmptyInput(t *testing.T) {
 
 func TestToUserGuidanceMarksExternal(t *testing.T) {
 	out, err := toUserGuidance([]extraGuidanceEntry{
-		{Content: "provided guidance", Author: "someone", Date: "2026-01-01"},
+		{Content: "authorized guidance", Author: "someone", Date: "2026-01-01", IsAuthorized: true},
+		{Content: "unauthorized guidance", Author: "someone else", Date: "2026-01-01"},
 	})
 	if err != nil {
 		t.Fatalf("toUserGuidance() error = %v", err)
 	}
-	if len(out) != 1 {
-		t.Fatalf("toUserGuidance() returned %d entries, want 1", len(out))
+	if len(out) != 2 {
+		t.Fatalf("toUserGuidance() returned %d entries, want 2", len(out))
 	}
-	if !out[0].IsExternal {
-		t.Error("toUserGuidance() entry should be marked IsExternal")
+	for i, g := range out {
+		if !g.IsExternal {
+			t.Errorf("entry %d should be marked IsExternal", i)
+		}
 	}
 	if !out[0].IsAuthorized {
-		t.Error("toUserGuidance() entry should still be marked IsAuthorized (caller-vouched)")
+		t.Error("an entry the caller marked authorized should keep IsAuthorized")
+	}
+	if out[1].IsAuthorized {
+		t.Error("an entry the caller did not mark must not be IsAuthorized")
 	}
 }

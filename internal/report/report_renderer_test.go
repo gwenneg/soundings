@@ -117,8 +117,8 @@ func TestGuidanceStatus(t *testing.T) {
 	}{
 		{"authorized", types.UserGuidance{IsAuthorized: true}, "✅ Authorized"},
 		{"unauthorized", types.UserGuidance{IsAuthorized: false}, "❌ Unauthorized"},
-		{"external takes precedence over authorized", types.UserGuidance{IsAuthorized: true, IsExternal: true}, "🌐 External (not analyzed)"},
-		{"external takes precedence over unauthorized", types.UserGuidance{IsAuthorized: false, IsExternal: true}, "🌐 External (not analyzed)"},
+		{"external and authorized by the caller", types.UserGuidance{IsAuthorized: true, IsExternal: true}, "🌐 External (used in analysis)"},
+		{"external and not authorized", types.UserGuidance{IsAuthorized: false, IsExternal: true}, "🌐 External (listed only)"},
 	}
 
 	for _, tt := range tests {

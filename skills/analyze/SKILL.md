@@ -32,11 +32,14 @@ Input, from `$ARGUMENTS` or the caller: one or more GitHub/GitLab compare
 URLs (mixed platforms and mixed GitLab hosts allowed). Callers may also
 pass: a `block_on` severity policy (`critical` (default), `high`, or
 `medium` — the severity at or above which a concern blocks the release;
-concerns one level below produce a manual-review verdict), pre-authorized
+concerns one level below produce a manual-review verdict), caller-supplied
 guidance entries (a JSON array of objects with `content`, `author`,
-`date`, and `comment_url` fields, passed to the renderer via
-`extra_guidance`), a `report_path` for the full report, and caller notes
-for the assessment. If no compare URL was provided, ask for one — do not
+`date`, `comment_url`, and `is_authorized` fields — guidance the caller
+collected elsewhere, such as an internal MR; the caller sets
+`is_authorized` on the entries it authorizes, and only those are relayed
+to the risk-analyst as guidance, while all of them are passed to the
+renderer via `extra_guidance` and listed in the report), a `report_path`
+for the full report, and caller notes for the assessment. If no compare URL was provided, ask for one — do not
 guess.
 
 ## Step 1 — settle where the report goes
@@ -93,7 +96,10 @@ that instead of calling it an auth problem.
 ## Step 3 — delegate the assessment (isolated)
 
 Launch the `risk-analyst` agent (provided by this plugin) with a prompt
-containing the fetch output directory path and any caller notes — nothing
+containing the fetch output directory path, any caller notes, and the
+caller-supplied guidance entries whose `is_authorized` is true — each
+relayed verbatim as content, author, and date under a "Caller-authorized
+guidance" heading; entries without it are not relayed — and nothing
 else. It reads the index and patches with judgment, assigns evidence-based
 severities, and returns a single JSON object. If the risk-analyst agent type
 is unavailable (e.g. running from a repo checkout rather than the

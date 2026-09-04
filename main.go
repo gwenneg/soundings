@@ -785,17 +785,20 @@ func truncationInfo(index *Index) *report.TruncationInfo {
 }
 
 // extraGuidanceEntry is the caller-facing shape of the render tool's
-// extra_guidance entries. All are treated as pre-authorized: the caller
-// vouches for them.
+// extra_guidance entries. Authorization is asserted per entry by the
+// caller through IsAuthorized and never verified here.
 type extraGuidanceEntry struct {
-	Content    string `json:"content"`
-	Author     string `json:"author"`
-	Date       string `json:"date"`
-	CommentURL string `json:"comment_url"`
+	Content      string `json:"content"`
+	Author       string `json:"author"`
+	Date         string `json:"date"`
+	CommentURL   string `json:"comment_url"`
+	IsAuthorized bool   `json:"is_authorized" jsonschema:"whether the caller authorizes this entry; authorized entries are relayed to the analysis, the rest are only listed in the report"`
 }
 
-// toUserGuidance converts caller-supplied guidance entries; all are treated
-// as pre-authorized (the caller vouches for them).
+// toUserGuidance converts caller-supplied guidance entries. Their
+// authorization is asserted by the caller, never checked here: IsAuthorized
+// carries the caller's assertion, IsExternal records that it was not
+// verified.
 func toUserGuidance(entries []extraGuidanceEntry) ([]types.UserGuidance, error) {
 	out := make([]types.UserGuidance, 0, len(entries))
 	for i, e := range entries {
@@ -806,7 +809,7 @@ func toUserGuidance(entries []extraGuidanceEntry) ([]types.UserGuidance, error) 
 			Content:      e.Content,
 			Author:       e.Author,
 			CommentURL:   e.CommentURL,
-			IsAuthorized: true,
+			IsAuthorized: e.IsAuthorized,
 			IsExternal:   true,
 		}
 		if e.Date != "" {
