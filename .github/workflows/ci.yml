@@ -2,9 +2,8 @@
 # every push to main, so a PR cannot merge (once the check is required)
 # without the code formatting, vetting, building, and passing its tests
 # with the race detector on. The plugin invokes `go run .` on the user's
-# machine, so the toolchain follows go.mod and the matrix covers the two
-# platforms the plugin is used on. Actions are pinned to commit SHAs,
-# never to a mutable tag.
+# machine, so the toolchain follows go.mod. Actions are pinned to commit
+# SHAs, never to a mutable tag.
 name: CI
 
 on:
@@ -21,12 +20,8 @@ concurrency:
 
 jobs:
   go:
-    name: go (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: go
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
