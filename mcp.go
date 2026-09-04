@@ -86,7 +86,7 @@ type renderToolInput struct {
 	AnalysisJSON  string               `json:"analysis_json" jsonschema:"the structured analysis JSON produced by the risk-analyst stage, passed verbatim"`
 	DataDir       string               `json:"data_dir" jsonschema:"the fetch output directory containing index.json"`
 	BlockOn       string               `json:"block_on,omitempty" jsonschema:"severity at or above which a concern blocks the release: critical (default), high, or medium; concerns one level below produce a manual-review verdict"`
-	ExtraGuidance []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-vouched pre-authorized guidance entries to include in the report"`
+	ExtraGuidance []extraGuidanceEntry `json:"extra_guidance,omitempty" jsonschema:"caller-supplied guidance entries; the analyze skill relays those with is_authorized true to the risk-analyst as guidance, and the report lists all of them as external"`
 	ReportPath    string               `json:"report_path" jsonschema:"absolute path ending in .md the rendered report is written to; an existing file is only overwritten if it is a previously generated soundings report. Required: the data_dir is deleted after a successful render, so this file is how the report outlives the run"`
 }
 
