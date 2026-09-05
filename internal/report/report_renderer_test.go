@@ -89,43 +89,23 @@ func TestEscapePipes(t *testing.T) {
 	}
 }
 
-func TestAuthorizationStatus(t *testing.T) {
-	tests := []struct {
-		name         string
-		isAuthorized bool
-		expected     string
-	}{
-		{"authorized", true, "✅ Authorized"},
-		{"unauthorized", false, "❌ Unauthorized"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := authorizationStatus(tt.isAuthorized)
-			if result != tt.expected {
-				t.Errorf("authorizationStatus(%v) = %q, want %q", tt.isAuthorized, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestGuidanceStatus(t *testing.T) {
+func TestGuidanceUsage(t *testing.T) {
 	tests := []struct {
 		name     string
 		guidance types.UserGuidance
 		expected string
 	}{
-		{"authorized", types.UserGuidance{IsAuthorized: true}, "✅ Authorized"},
-		{"unauthorized", types.UserGuidance{IsAuthorized: false}, "❌ Unauthorized"},
-		{"external and authorized by the caller", types.UserGuidance{IsAuthorized: true, IsExternal: true}, "🌐 External (used in analysis)"},
-		{"external and not authorized", types.UserGuidance{IsAuthorized: false, IsExternal: true}, "🌐 External (listed only)"},
+		{"authorized", types.UserGuidance{IsAuthorized: true}, "✅ Used"},
+		{"unauthorized", types.UserGuidance{IsAuthorized: false}, "🚫 Ignored"},
+		{"external and authorized by the caller", types.UserGuidance{IsAuthorized: true, IsExternal: true}, "✅ Used"},
+		{"external and not authorized", types.UserGuidance{IsAuthorized: false, IsExternal: true}, "🚫 Ignored"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := guidanceStatus(tt.guidance)
+			result := guidanceUsage(tt.guidance)
 			if result != tt.expected {
-				t.Errorf("guidanceStatus(%+v) = %q, want %q", tt.guidance, result, tt.expected)
+				t.Errorf("guidanceUsage(%+v) = %q, want %q", tt.guidance, result, tt.expected)
 			}
 		})
 	}
@@ -430,7 +410,7 @@ func TestTemplateFuncs(t *testing.T) {
 		"escapePipes",
 		"escapeCell",
 		"severityEmoji",
-		"authorizationStatus",
+		"guidanceUsage",
 		"prLink",
 		"formatAuthor",
 		"docURL",
@@ -743,12 +723,12 @@ func TestGenerateReportWithUserGuidance(t *testing.T) {
 		t.Error("GenerateReport() report missing third guidance")
 	}
 
-	// Verify authorization status
-	if !strings.Contains(report, "✅ Authorized") {
-		t.Error("GenerateReport() report missing authorized status")
+	// Verify the "In analysis" column
+	if !strings.Contains(report, "✅ Used") {
+		t.Error("GenerateReport() report missing used status")
 	}
-	if !strings.Contains(report, "❌ Unauthorized") {
-		t.Error("GenerateReport() report missing unauthorized status")
+	if !strings.Contains(report, "🚫 Ignored") {
+		t.Error("GenerateReport() report missing ignored status")
 	}
 }
 

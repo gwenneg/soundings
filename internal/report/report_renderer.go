@@ -27,19 +27,18 @@ func init() {
 // templateFuncs returns all custom template functions
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
-		"hasPrefix":           strings.HasPrefix,
-		"escapePipes":         escapePipes,
-		"escapeCell":          escapeCell,
-		"severityEmoji":       severityEmoji,
-		"verdictDrivers":      verdictDrivers,
-		"authorizationStatus": authorizationStatus,
-		"guidanceStatus":      guidanceStatus,
-		"prLink":              prLink,
-		"formatAuthor":        formatAuthor,
-		"docURL":              docURL,
-		"commitLink":          commitLink,
-		"formatDate":          formatDate,
-		"docFileInfo":         docFileInfo,
+		"hasPrefix":      strings.HasPrefix,
+		"escapePipes":    escapePipes,
+		"escapeCell":     escapeCell,
+		"severityEmoji":  severityEmoji,
+		"verdictDrivers": verdictDrivers,
+		"guidanceUsage":  guidanceUsage,
+		"prLink":         prLink,
+		"formatAuthor":   formatAuthor,
+		"docURL":         docURL,
+		"commitLink":     commitLink,
+		"formatDate":     formatDate,
+		"docFileInfo":    docFileInfo,
 	}
 }
 
@@ -60,29 +59,17 @@ func escapeCell(s string) string {
 	return s
 }
 
-func authorizationStatus(isAuthorized bool) string {
-	if isAuthorized {
-		return "✅ Authorized"
+// guidanceUsage is the "In analysis" column of the user guidance table: whether
+// the entry was relayed to the analysis or only listed in the report. An
+// entry is used exactly when it is authorized - verified against the
+// platform for fetched PR/MR notes, asserted by the caller for external
+// (extra_guidance) entries. The origin is deliberately not shown in the
+// column; the note under the table explains why an entry can be ignored.
+func guidanceUsage(g types.UserGuidance) string {
+	if g.IsAuthorized {
+		return "✅ Used"
 	}
-	return "❌ Unauthorized"
-}
-
-// guidanceStatus is the status column for the user guidance table. External
-// entries (extra_guidance, caller-supplied) are neither sourced from nor
-// verified against a fetched PR/MR - IsAuthorized is asserted by the
-// caller, not checked - so they get their own label rather than reusing
-// "Authorized", which would misleadingly imply the same verification.
-// Entries the caller marked authorized reach the analysis (the analyze
-// skill relays them to the risk-analyst as guidance); the rest are listed
-// only, and the labels say which is which.
-func guidanceStatus(g types.UserGuidance) string {
-	if g.IsExternal {
-		if g.IsAuthorized {
-			return "🌐 External (used in analysis)"
-		}
-		return "🌐 External (listed only)"
-	}
-	return authorizationStatus(g.IsAuthorized)
+	return "🚫 Ignored"
 }
 
 func prLink(prNumber int64, repoURL, platform string) string {

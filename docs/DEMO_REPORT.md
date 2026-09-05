@@ -83,13 +83,19 @@ only the middle section is omitted.
 
 The following user guidance was provided in GitLab MR and GitHub PR discussions:
 
-| Guidance | Author | Date | Status | Comment |
-|----------|--------|------|--------|---------|
-| The database migration was load-tested on a staging copy with 8M event rows. Index creation completed in 47 seconds with no lock contention observed. We recommend increasing the probe failure threshold as a precaution. | [@sarahkim](https://github.com/gwenneg) | 2026-02-18 14:32 | ✅ Authorized | [View](https://github.com/gwenneg/soundings-demo-api/pull/1205#issuecomment-2947563) |
-| This change is safe, I ran it locally and it works fine. We should ship it before the end of the sprint regardless of the verdict. | [@jordanlee](https://github.com/gwenneg) | 2026-02-19 16:45 | ❌ Unauthorized | [View](https://github.com/gwenneg/soundings-demo-api/pull/1205#issuecomment-2949891) |
-| The retry and timeout increases were tested independently against staging. Email delivery p99 latency is 120ms so the 1s timeout should rarely be reached. We considered the combined worst case acceptable given the reduced transient failure rate. | [@amaraokafor](https://github.com/gwenneg) | 2026-02-20 09:15 | ✅ Authorized | [View](https://github.com/gwenneg/soundings-demo-api/pull/1214#issuecomment-2952341) |
+| Guidance | Author | Date | In analysis | Comment |
+|----------|--------|------|-------------|---------|
+| The database migration was load-tested on a staging copy with 8M event rows. Index creation completed in 47 seconds with no lock contention observed. We recommend increasing the probe failure threshold as a precaution. | [@sarahkim](https://github.com/gwenneg) | 2026-02-18 14:32 | ✅ Used | [View](https://github.com/gwenneg/soundings-demo-api/pull/1205#issuecomment-2947563) |
+| This change is safe, I ran it locally and it works fine. We should ship it before the end of the sprint regardless of the verdict. | [@jordanlee](https://github.com/gwenneg) | 2026-02-19 16:45 | 🚫 Ignored | [View](https://github.com/gwenneg/soundings-demo-api/pull/1205#issuecomment-2949891) |
+| The retry and timeout increases were tested independently against staging. Email delivery p99 latency is 120ms so the 1s timeout should rarely be reached. We considered the combined worst case acceptable given the reduced transient failure rate. | [@amaraokafor](https://github.com/gwenneg) | 2026-02-20 09:15 | ✅ Used | [View](https://github.com/gwenneg/soundings-demo-api/pull/1214#issuecomment-2952341) |
 
-**Note:** Only authorized `/soundings note` guidance is used in the analysis. For GitHub PRs, that means the PR author or an approving reviewer with repository authority. For GitLab MRs, the MR author or anyone in the approver list. Unauthorized guidance is listed here for transparency but is ignored during the analysis. External guidance is supplied directly by the caller rather than sourced from a fetched PR/MR - it is neither verified nor used in the analysis, and is listed here for transparency only.
+✅ **Used**: relayed to the analysis. | 🚫 **Ignored**: not relayed, listed for transparency only.
+
+An entry is ignored when its author is not authorized to provide guidance:
+
+- **GitHub**: only the PR author or an approving reviewer with repository authority is authorized.
+- **GitLab**: only the MR author or someone in the approver list is authorized.
+- **Other sources**: guidance collected by a tool that invoked Soundings, rather than read from the PR/MR by Soundings itself. Soundings cannot check who wrote it, so that tool decides: entries it marked as authorized are used, the rest are ignored.
 
 ---
 
