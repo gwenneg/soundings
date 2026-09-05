@@ -100,13 +100,19 @@ only the middle section is omitted.
 
 The following user guidance was provided in GitLab MR and GitHub PR discussions:
 
-| Guidance | Author | Date | Status | Comment |
-|----------|--------|------|--------|---------|
+| Guidance | Author | Date | In analysis | Comment |
+|----------|--------|------|-------------|---------|
 {{- range .AllUserGuidance}}
-| {{escapeCell .Content}} | {{formatAuthor .Author .CommentURL}} | {{formatDate .Date}} | {{guidanceStatus .}} | [View]({{.CommentURL}}) |
+| {{escapeCell .Content}} | {{formatAuthor .Author .CommentURL}} | {{formatDate .Date}} | {{guidanceUsage .}} | [View]({{.CommentURL}}) |
 {{- end}}
 
-**Note:** Only authorized `/soundings note` guidance is used in the analysis. For GitHub PRs, that means the PR author or an approving reviewer with repository authority. For GitLab MRs, the MR author or anyone in the approver list. Unauthorized guidance is listed here for transparency but is ignored during the analysis. External guidance is supplied directly by the caller rather than sourced from a fetched PR/MR, and Soundings does not verify who wrote it: entries the caller marked authorized are used in the analysis like authorized guidance, the rest are listed here only.
+✅ **Used**: relayed to the analysis. | 🚫 **Ignored**: not relayed, listed for transparency only.
+
+An entry is ignored when its author is not authorized to provide guidance:
+
+- **GitHub**: only the PR author or an approving reviewer with repository authority is authorized.
+- **GitLab**: only the MR author or someone in the approver list is authorized.
+- **Other sources**: guidance collected by a tool that invoked Soundings, rather than read from the PR/MR by Soundings itself. Soundings cannot check who wrote it, so that tool decides: entries it marked as authorized are used, the rest are ignored.
 {{- end}}
 
 ---
