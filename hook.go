@@ -8,6 +8,22 @@ import (
 	"strings"
 )
 
+// preApprovedTools is the hook's pre-approval policy: this plugin's own
+// helper MCP tools, by plugin-scoped name, that never raise an interactive
+// prompt. Pre-approved because a plugin cannot ship permission rules, and
+// the skill's allowed-tools frontmatter was observed not to remove their
+// prompts. User-configured deny and ask rules still override the allow.
+var preApprovedTools = map[string]bool{
+	"mcp__plugin_soundings_helper__fetch":  true,
+	"mcp__plugin_soundings_helper__render": true,
+}
+
+// confinedTools are the read tools the hook fences around the registered
+// fetch directories. Together with preApprovedTools it is the full set of
+// tools the hook has an opinion on; hooks/hooks.json must route exactly
+// these (see TestHooksMatchersMatchHookPolicy).
+var confinedTools = map[string]bool{"Read": true, "Grep": true, "Glob": true}
+
 // runHook is the PreToolUse confinement hook around the registered fetch
 // directories (see registry.go), in both directions: the risk-analyst
 // agent may Read/Grep/Glob only inside them (the explicit allow also
@@ -31,12 +47,12 @@ func runHook(stdin io.Reader, stdout io.Writer) error {
 	if err := json.NewDecoder(stdin).Decode(&in); err != nil {
 		return fmt.Errorf("parsing hook input: %w", err)
 	}
-	// Pre-approved because a plugin cannot ship permission rules, and the
-	// skill's allowed-tools frontmatter is not a permission grant.
-	if in.ToolName == "mcp__plugin_soundings_helper__fetch" ||
-		in.ToolName == "mcp__plugin_soundings_helper__render" {
+	if preApprovedTools[in.ToolName] {
 		return emitDecision(stdout, "allow",
 			"soundings: the plugin's own helper MCP tool is pre-approved")
+	}
+	if !confinedTools[in.ToolName] {
+		return nil
 	}
 	var path string
 	switch in.ToolName {
