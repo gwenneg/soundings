@@ -6,7 +6,7 @@ require (
 	github.com/google/go-github/v90 v90.0.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	gitlab.com/gitlab-org/api/client-go/v2 v2.64.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 )
 
 require (
