@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -266,5 +267,67 @@ func TestRunHookErrorsOnMalformedInput(t *testing.T) {
 	var out strings.Builder
 	if err := runHook(strings.NewReader("not json"), &out); err == nil {
 		t.Fatal("expected an error on malformed input")
+	}
+}
+
+// TestHooksMatchersMatchHookPolicy guards against hooks/hooks.json and the
+// hook's policy drifting apart. The matchers decide which calls reach the
+// hook (routing); preApprovedTools and confinedTools decide what it says
+// about them (policy). A policy tool missing from the matchers would
+// silently never reach the hook: a helper tool would prompt again, a read
+// tool would escape the fence. A matcher tool outside the policy spawns a
+// hook process that can only stay silent.
+func TestHooksMatchersMatchHookPolicy(t *testing.T) {
+	data, err := os.ReadFile("hooks/hooks.json")
+	if err != nil {
+		t.Fatalf("reading hooks/hooks.json: %v", err)
+	}
+	var cfg struct {
+		Hooks struct {
+			PreToolUse []struct {
+				Matcher string `json:"matcher"`
+				Hooks   []struct {
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"PreToolUse"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("parsing hooks/hooks.json: %v", err)
+	}
+	if len(cfg.Hooks.PreToolUse) == 0 {
+		t.Fatal("hooks/hooks.json registers no PreToolUse hook")
+	}
+
+	const command = "go -C ${CLAUDE_PLUGIN_ROOT} run . hook"
+	routed := make(map[string]bool)
+	for _, entry := range cfg.Hooks.PreToolUse {
+		if len(entry.Hooks) != 1 || entry.Hooks[0].Command != command {
+			t.Errorf("matcher %q must run exactly one hook, %q", entry.Matcher, command)
+		}
+		for _, tool := range strings.Split(entry.Matcher, "|") {
+			if routed[tool] {
+				t.Errorf("tool %q is routed by more than one matcher: the hook would run twice per call", tool)
+			}
+			routed[tool] = true
+		}
+	}
+
+	policy := make(map[string]bool)
+	for tool := range preApprovedTools {
+		policy[tool] = true
+	}
+	for tool := range confinedTools {
+		policy[tool] = true
+	}
+	for tool := range policy {
+		if !routed[tool] {
+			t.Errorf("tool %q is in the hook policy but no hooks.json matcher routes it: its calls would never reach the hook", tool)
+		}
+	}
+	for tool := range routed {
+		if !policy[tool] {
+			t.Errorf("hooks.json routes %q to the hook but the hook has no opinion on it: dead matcher entry", tool)
+		}
 	}
 }
